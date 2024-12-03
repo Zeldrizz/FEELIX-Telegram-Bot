@@ -1,0 +1,97 @@
+### Описание директорий и файлов
+
+- **bot/**: Основной пакет бота
+  - `main.py`: Точка входа для запуска бота
+  - `handlers.py`: Обработчики команд и сообщений
+  - `config.py`: Конфигурационные настройки, включая загрузку переменных окружения
+  - `utils.py`: Вспомогательные функции
+  - `logging_config.py`: Настройка системы логирования
+- **logs/**: Директория для хранения логов бота. Создается автоматически при запуске бота.
+  - `bot.log`: Файл логов.
+- **feedbacks/**: Директория для хранения отзывов пользователей. Создается автоматически при работе бота, после отправки отзыва пользователем.
+  - `feedbacks.txt`: Файл с сохраненными отзывами.
+- **requirements.txt**: Список зависимостей проекта.
+- **.gitignore**: Файл, определяющий, какие файлы и директории Git должен игнорировать.
+- **README.md**: Текущий файл с техническим описанием репозитория.
+
+## Установка и Настройка
+
+1. **[COMPULSORY] Клонировать репозиторий:**
+
+    ```bash
+    git clone https://github.com/yourusername/your_project.git
+    cd your_project
+    ```
+
+2. **[OPTIONAL] Создать и активировать виртуальное окружение:**
+
+    ```bash
+    python3 -m venv FEELIX_ASYNC_BOT
+    source FEELIX_ASYNC_BOT/bin/activate  # На Unix или MacOS
+    FEELIX_ASYNC_BOT\Scripts\activate     # На Windows
+    ```
+
+3. **[COMPULSORY] Установить зависимости:**
+
+    ```bash
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    ```
+
+4. **[COMPULSORY] Добавить себе на локалку файл `.env`:**
+
+    - Создать файл `.env` в корне проекта.
+    - Добавить в него необходимые переменные окружения (файл будет отправлен через ТГ).
+
+    Пример содержания `.env`:
+
+5. **[COMPULSORY] Добавить себе на локалку файл `.gitignore`:**
+
+    ```.gitignore
+    # Виртуальное окружение
+    FEELIX_ASYNC_BOT/
+    venv/
+    env/
+    .venv/
+    .env/
+    *.env
+
+    # Логи
+    logs/
+    *.log
+
+    # Файлы с отзывами
+    feedbacks/
+    feedbacks.txt
+
+    # Компилированные файлы Python
+    __pycache__/
+    *.pyc
+    *.pyo
+    *.pyd
+
+    # Настройки IDE
+    .vscode/
+    .idea/
+    *.sublime-project
+    *.sublime-workspace
+
+    # Другие временные файлы
+    *.swp
+    *.swo
+    *.tmp
+    *.bak
+    *.orig
+
+    # Секретные файлы
+    *.secret
+    *.key
+    *.pem```
+
+## Запуск Бота
+
+Убедиться, что виртуальное окружение активировано и файл `.env` настроен.
+
+```bash
+cd  bot
+python3 main.py

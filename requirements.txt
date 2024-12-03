@@ -1,0 +1,5 @@
+groq
+python-telegram-bot
+nest_asyncio
+python-dotenv
+httpx
