@@ -1,16 +1,11 @@
 # bot/handlers.py
 import os
-import logging
 import time
-import hashlib
-import random
+import textwrap
 from itertools import cycle
 import httpx
 from telegram import Update
 from telegram.ext import (
-    filters, 
-    MessageHandler, 
-    CommandHandler, 
     ContextTypes
 )
 from config import (
@@ -104,12 +99,14 @@ async def add_message(user_id, role, content):
     logger.debug(f"Добавлено сообщение: {role} - {content}")
 
     total_chars = sum(len(msg["content"]) for msg in history)
+    print(total_chars)
     logger.debug(f"Общее количество символов в истории: {total_chars}")
 
     if total_chars > MAX_CHAR_LIMIT:
         logger.info(f"Лимит символов ({MAX_CHAR_LIMIT}) превышен для пользователя {user_id}. Выполняется суммаризация.")
         summarized_content = await summarize_conversation(user_id, history)
-        conversation_histories[user_id] = [{"role": "system", "content": summarized_content}]
+        print(textwrap.fill(summarized_content, width=80))
+        conversation_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT + 'Вот краткое описание твоего собеседника, это очень важная информация!: ' + summarized_content}]
         logger.info(f"Суммаризация для пользователя {user_id} выполнена и история сброшена.")
 
 async def get_groq_response(user_id, prompt_ru):

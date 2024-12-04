@@ -24,7 +24,7 @@ print(CLOUDFLARE_GATEWAY_ID)
 LOG_DIR = os.path.join(Path(__file__).resolve().parent.parent, 'logs')  # Логи в корне проекта
 FEEDBACK_FILE = os.path.join(Path(__file__).resolve().parent.parent, 'feedbacks', 'feedbacks.txt')
 
-MAX_CHAR_LIMIT = 120000
+MAX_CHAR_LIMIT = 3000
 SUMMARIZATION_PROMPT = "Пожалуйста, пересскажи следующий разговор на русском языке для продолжения разговора:"
 
 # SYSTEM_PROMPT = (
