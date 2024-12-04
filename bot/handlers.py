@@ -44,7 +44,8 @@ async def summarize_conversation(user_id, history):
     history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history])
     try:
         # Выбираем следующий API-ключ из цикла
-        api_key = next(api_key_cycle)
+        # api_key = next(api_key_cycle)
+        api_key = GROQ_API_KEYS[0]
         
         base_url = f"https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/groq"
 
@@ -122,7 +123,8 @@ async def get_groq_response(user_id, prompt_ru):
     await add_message(user_id, "user", prompt_ru)
     try:
         # Выбираем следующий API-ключ из цикла
-        api_key = next(api_key_cycle)
+        # api_key = next(api_key_cycle)
+        api_key = GROQ_API_KEYS[0]
 
         base_url = f"https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/groq"
 
