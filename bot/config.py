@@ -24,7 +24,7 @@ print(CLOUDFLARE_GATEWAY_ID)
 LOG_DIR = os.path.join(Path(__file__).resolve().parent.parent, 'logs')  # Логи в корне проекта
 FEEDBACK_FILE = os.path.join(Path(__file__).resolve().parent.parent, 'feedbacks', 'feedbacks.txt')
 
-MAX_CHAR_LIMIT = 2000 # 50000
+MAX_CHAR_LIMIT = 50000
 # 0.75 token = 1 word
 # 8192 tokens * 0.75 = 10000 words
 # 10000 * 5 = 50000 symbols
