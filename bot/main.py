@@ -14,7 +14,7 @@ from logging_config import logger
 
 def main():
     if not TOKEN:
-        logger.error("Токен бота не установлен. Проверьте файл .env.")
+        logger.error("Токен бота не установлен. Проверьте файл .env")
         return
 
     application = ApplicationBuilder().token(TOKEN).build()

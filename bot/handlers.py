@@ -52,10 +52,11 @@ async def summarize_conversation(user_id, history):
         data = {
             "messages": [
                 {"role": "user", "content": SUMMARIZATION_PROMPT},
-                {"role": "system", "content": history_text}
+                {"role": "system", "content": history_text},
+                {"role": "user", "content": 'Пожалуйста, начните пересказ согласно вышеописанным инструкциям.'},
             ],
             "model": "llama3-8b-8192",
-            "max_tokens": 12000,
+            # "max_tokens": 12000,
             "temperature": 0.5,
             "top_p": 1.0
         }
