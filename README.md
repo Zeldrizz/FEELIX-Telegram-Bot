@@ -18,8 +18,8 @@
 1. **Клонировать репозиторий:**
 
     ```bash
-    git clone git clone git@github.com:Zeldrizz/feelix_telegram_bot.git your_project
-    cd your_project
+    git clone git@github.com:Zeldrizz/feelix_telegram_bot.git your_dir
+    cd your_dir
     ```
 
 2. **Создать и активировать виртуальное окружение, чтобы получить доступ к переменным из .env:**
