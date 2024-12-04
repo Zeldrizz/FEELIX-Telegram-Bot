@@ -18,7 +18,7 @@
 1. **Клонировать репозиторий:**
 
     ```bash
-    git clone https://github.com/yourusername/your_project.git
+    git clone git clone git@github.com:Zeldrizz/feelix_telegram_bot.git your_project
     cd your_project
     ```
 
