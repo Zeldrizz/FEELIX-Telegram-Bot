@@ -75,18 +75,21 @@ def db_handle_messages(user_id, role, content : list):
 
 
 def db_get_similar(user_id, content : str):
-    search_res = client.search(
-        collection_name=MAIN_COLLECTION,
-        data=[
-            embedding_fn(content)
-        ],
-        limit=3,  # Return top 3 results
-        # search_params={"metric_type": "IP", "params": {}},  # Inner product distance
-        # output_fields=["message"],  # Return the text field
-        # filter="user = " + str(user_id)
-    )
-    return search_res
-    # return [i["message"] for i in search_res]
+    try:
+        search_res = client.search(
+            collection_name=MAIN_COLLECTION,
+            data=[
+                embedding_fn(content)[0]
+            ],
+            limit=3,  # Return top 3 results
+            search_params={"metric_type": "IP", "params": {}},  # Inner product distance
+            output_fields=["message"],  # Return the text field
+            # filter="user == " + str(user_id)
+        )
+        return [i["entity"]["message"] for i in search_res[0]]
+        # return search_res[0][0]
+    except Exception as e:
+        print(e)
 
 
 # res = client.search(
