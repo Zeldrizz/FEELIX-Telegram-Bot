@@ -4,3 +4,4 @@ nest_asyncio
 python-dotenv
 httpx
 matplotlib
+pymilvus
