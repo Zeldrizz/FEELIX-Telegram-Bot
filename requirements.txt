@@ -4,3 +4,9 @@ nest_asyncio
 python-dotenv
 httpx
 pymilvus
+pymilvus[model]
+torch
+python-telegram-bot
+tqdm
+requests
+mem0ai

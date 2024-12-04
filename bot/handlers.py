@@ -8,6 +8,8 @@ from telegram import Update
 from telegram.ext import (
     ContextTypes
 )
+
+import database
 from config import (
     SYSTEM_PROMPT, 
     MAX_CHAR_LIMIT, 
@@ -21,6 +23,7 @@ from config import (
 from utils import log_message, hash_data
 from logging_config import logger
 import nest_asyncio
+import database
 
 nest_asyncio.apply()
 
@@ -110,7 +113,12 @@ async def add_message(user_id, role, content):
         conversation_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT + 'Вот краткое описание твоего собеседника, это очень важная информация: ' + summarized_content}]
         logger.info(f"Суммаризация для пользователя {user_id} выполнена и история сброшена.")
 
+
+
 async def get_groq_response(user_id, prompt_ru):
+
+    return "Пока без грока бро"
+
     """
     Отправляет сообщение в Groq API и получает ответ.
     
@@ -276,6 +284,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.full_name
     user_message = update.message.text
+
+    database.db_handle_messages(user_id, "user", [user_message])
+    print(database.db_get_similar(user_id, user_message))
+
     logger.info(f"Получено сообщение от пользователя {user_id}: {user_message}")
 
     log_message(user_id, "user", user_message)
