@@ -164,13 +164,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Обработчик команды /start.
     """
     user_id = update.effective_user.id
-    username = update.effective_user.username or update.effective_user.full_name
     message = (
-        "Здравствуйте! Я Feelix, буду стараться быть для вас самым приятным и душевным собеседником!\n"
-        "Я поддержу вас в любой момент времени!\n\n"
-        "(P.S. После общения с ботом, пожалуйста оставьте свой отзыв через команду /feedback)"
+        "Привет! Я Feelix – ваш душевный собеседник, готовый поддержать в любую минуту!\n\n"
+        "Продолжая, вы соглашаетесь с "
+        "[правилами](https://drive.google.com/file/d/1jcEspFp9-vrwDtXPhsQq2ho-KA9LSmbl/view?usp=sharing) и "
+        "[политикой](https://drive.google.com/file/d/1XLRiiLoLLTMSmHWyY9_L0oM4apQHmLDD/view?usp=sharing)."
     )
-    await update.message.reply_text(message)
+    await update.message.reply_text(message, parse_mode="Markdown")
 
     log_message(user_id, "user", "/start")
     log_message(user_id, "assistant", message)
