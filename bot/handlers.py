@@ -106,7 +106,7 @@ async def add_message(user_id, role, content):
         logger.info(f"Лимит символов ({MAX_CHAR_LIMIT}) превышен для пользователя {user_id}. Выполняется суммаризация.")
         summarized_content = await summarize_conversation(user_id, history)
         print(textwrap.fill(summarized_content, width=80))
-        conversation_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT + 'Вот краткое описание твоего собеседника, это очень важная информация!: ' + summarized_content}]
+        conversation_histories[user_id] = [{"role": "system", "content": SYSTEM_PROMPT + 'Вот краткое описание твоего собеседника, это очень важная информация: ' + summarized_content}]
         logger.info(f"Суммаризация для пользователя {user_id} выполнена и история сброшена.")
 
 async def get_groq_response(user_id, prompt_ru):
