@@ -38,25 +38,7 @@ role_field = FieldSchema(name="role", dtype=DataType.VARCHAR)
 schema = CollectionSchema(fields=[id_field, user_id_field, time_field, vector_field, message_field, role_field],
                           auto_id=True, enable_dynamic_field=False, description="Main collection schema")
 
-# config = {
-#     "vector_store": {
-#         "provider": "milvus",
-#         "config": {
-#             "collection_name": "mem0_milvus",
-#             "embedding_model_dims": str(EMBEDDINGS_DIM),
-#             "url": "../database/milvus_main.db",  # Use local vector database for demo purpose
-#         },
-#     },
-#     "version": "v1.1",
-# }
-#
-# memory = Memory.from_config(config)
-
-
 client = MilvusClient("database/milvus_main.db")
-
-# embedding_fn = model.DefaultEmbeddingFunction()
-
 
 #надо поглядеть на параметры при создании
 if not client.has_collection(collection_name=MAIN_COLLECTION):
@@ -81,13 +63,6 @@ def db_handle_messages(user_id, role, content : list):
     print(f"Number of messages inserted for user {user_id}: {res["insert_count"]}")
     if content[0] == ".":
         db_print_all()
-
-    # res = memory.add(
-    #     messages=content,
-    #     user_id=user_id,
-    #     # metadata={"category": "hobbies"},
-    # )
-    # print(res)
 
 
 def db_get_similar(user_id, content : str):
@@ -117,10 +92,3 @@ def db_print_all():
     print("full database printed:")
     for i in res:
         print(i["message"])
-
-# res = client.search(
-#     collection_name="demo_collection",  # target collection
-#     data=query_vectors,  # query vectors
-#     limit=2,  # number of returned entities
-#     output_fields=["text", "subject"],  # specifies fields to be returned
-# )
