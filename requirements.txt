@@ -10,3 +10,4 @@ python-telegram-bot
 tqdm
 requests
 mem0ai
+sentence_transformers

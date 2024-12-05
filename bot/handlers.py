@@ -286,7 +286,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
 
     database.db_handle_messages(user_id, "user", [user_message])
-    print(database.db_get_similar(user_id, user_message))
+    print("top 3 most similar:", database.db_get_similar(user_id, user_message))
 
     logger.info(f"Получено сообщение от пользователя {user_id}: {user_message}")
 
