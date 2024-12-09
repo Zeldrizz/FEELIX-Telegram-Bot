@@ -9,17 +9,9 @@ load_dotenv(dotenv_path=env_path)
 TOKEN = os.getenv('TOKEN')
 ADMIN_USER_ID = [int(user_id.strip()) for user_id in os.getenv('ADMIN_USER_ID', '').split(',') if user_id.strip()]
 
-# GROQ_API_KEYS = [key.strip() for key in os.getenv('GROQ_API_KEY', '').split(',') if key.strip()]
-# CLOUDFLARE_ACCOUNT_ID = os.getenv('CLOUDFLARE_ACCOUNT_ID')
-# CLOUDFLARE_GATEWAY_ID = os.getenv('CLOUDFLARE_GATEWAY_ID')
-
-GROQ_API_KEYS = ['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']
-CLOUDFLARE_ACCOUNT_ID = '7e21baebff161fbad88b4539469c7d74'
-CLOUDFLARE_GATEWAY_ID = 'llama'
-
-print(GROQ_API_KEYS)
-print(CLOUDFLARE_ACCOUNT_ID)
-print(CLOUDFLARE_GATEWAY_ID)
+GROQ_API_KEYS = [key.strip() for key in os.getenv('GROQ_API_KEY', '').split(',') if key.strip()]
+CLOUDFLARE_ACCOUNT_ID = os.getenv('CLOUDFLARE_ACCOUNT_ID')
+CLOUDFLARE_GATEWAY_ID = os.getenv('CLOUDFLARE_GATEWAY_ID')
 
 LOG_DIR = os.path.join(Path(__file__).resolve().parent.parent, 'logs')  # Логи в корне проекта
 FEEDBACK_FILE = os.path.join(Path(__file__).resolve().parent.parent, 'feedbacks', 'feedbacks.txt')

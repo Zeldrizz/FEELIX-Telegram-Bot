@@ -5,9 +5,9 @@ python-dotenv
 httpx
 pymilvus
 pymilvus[model]
-torch
-python-telegram-bot
 tqdm
 requests
 mem0ai
-sentence_transformers
+sentence-transformers
+# instead of torch do:
+# pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cpu

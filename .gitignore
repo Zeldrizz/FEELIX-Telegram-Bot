@@ -11,6 +11,8 @@ logs/
 feedbacks/
 feedbacks.txt
 
+save/
+
 __pycache__/
 *.pyc
 *.pyo
