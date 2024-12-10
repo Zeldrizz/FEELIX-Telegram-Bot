@@ -204,7 +204,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Доступные действия через кнопки:\n"
         "1) Оставить отзыв\n"
         "2) Сбросить историю\n"
-        "Админы могут получить отзывы."
     )
     await update.message.reply_text(message, reply_markup=get_main_menu(user_id))
     log_message(user_id, "user", "/help")
