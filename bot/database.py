@@ -1,3 +1,4 @@
+# bot/database.py
 import time
 from pymilvus import MilvusClient
 from pymilvus import model
