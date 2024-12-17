@@ -118,14 +118,12 @@ async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) ->
 async def add_message(user_id: int, role: str, content: List[str]) -> bool:
     """
     Добавляет сообщение в историю разговора пользователя.
-    Проверяет превышение MAX_CHAR_LIMIT для суммаризации.
-    Проверяет превышение DAILY_LIMIT_CHARS для бесплатных пользователей и устанавливает суточный лимит при превышении.
+    Для бесплатных пользователей:
+    - Если общее число символов превысило 10 000, делаем суммаризацию,
+      сбрасываем историю и даем "бан" на 24 часа.
+    Для всех пользователей:
+    - Если общее число символов превысило MAX_CHAR_LIMIT (50 000), делаем суммаризацию.
     Возвращает True, если была выполнена суммаризация.
-
-    :param user_id: Идентификатор пользователя.
-    :param role: Роль отправителя сообщения ('user' или 'assistant').
-    :param content: Список текстовых сообщений для добавления.
-    :return: Булево значение, указывающее, была ли выполнена суммаризация.
     """
     history = load_user_history(user_id)
     for message in content:
@@ -135,9 +133,33 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     total_chars = sum(len(msg["content"]) for msg in history)
     logger.debug(f"Общее количество символов в истории: {total_chars}")
-    # print(total_chars)
+
+    print(total_chars)
 
     summarization_happened = False
+
+    # Если пользователь не премиум и превысили 10 000 символов:
+    if user_id not in PREMIUM_USERS and total_chars > DAILY_LIMIT_CHARS:
+        logger.info(f"Превышен DAILY_LIMIT_CHARS для пользователя {user_id}. Суммаризация и установка дневного лимита...")
+        summarized_content = await summarize_conversation(user_id, history)
+
+        new_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        gender = get_user_gender(user_id)
+        if gender and gender not in ["Не хочу указывать"]:
+            new_history.append({"role": "system", "content": f"Ваш собеседник - {gender.lower()}."})
+        new_history.append({"role": "system", "content": "Вот краткое описание предыдущего диалога: " + summarized_content})
+
+        save_user_history(user_id, new_history)
+        logger.info(f"Суммаризация для пользователя {user_id} выполнена и история сброшена.")
+
+        # Устанавливаем ежедневный лимит на 24 часа
+        DAILY_LIMITS[user_id] = datetime.now()
+        save_daily_limits(DAILY_LIMITS)
+
+        summarization_happened = True
+        return summarization_happened
+
+    # Логика с MAX_CHAR_LIMIT остаётся для всех пользователей (аварийный случай):
     if total_chars > MAX_CHAR_LIMIT:
         logger.info(f"Превышен MAX_CHAR_LIMIT для пользователя {user_id}. Суммаризация...")
         summarized_content = await summarize_conversation(user_id, history)
@@ -147,18 +169,13 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
         if gender and gender not in ["Не хочу указывать"]:
             new_history.append({"role": "system", "content": f"Ваш собеседник - {gender.lower()}."})
         new_history.append({"role": "system", "content": "Вот краткое описание предыдущего диалога: " + summarized_content})
-        
+
         save_user_history(user_id, new_history)
         logger.info(f"Суммаризация для пользователя {user_id} выполнена и история сброшена.")
         summarization_happened = True
 
-    if user_id not in PREMIUM_USERS and total_chars > DAILY_LIMIT_CHARS:
-        # Если еще не установлено время ограничения, устанавливаем
-        if user_id not in DAILY_LIMITS:
-            DAILY_LIMITS[user_id] = datetime.now()
-            save_daily_limits(DAILY_LIMITS)
-
     return summarization_happened
+
 
 async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     """
