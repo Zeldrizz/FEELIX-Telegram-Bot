@@ -164,7 +164,6 @@ def save_user_info(user_id: int, username: str) -> None:
     else:
         users_data = []
 
-    # Если пользователь уже есть, не перезаписываем, просто выходим
     for user_data in users_data:
         if user_data["user_id"] == user_id:
             return
@@ -172,7 +171,8 @@ def save_user_info(user_id: int, username: str) -> None:
     new_user = {
         "user_id": user_id,
         "username": username,
-        "gender": None  # по умолчанию неизвестен
+        "gender": None,
+        "free_trial_used": False
     }
     users_data.append(new_user)
     with open(users_file, 'w', encoding='utf-8') as f:
@@ -188,7 +188,6 @@ def set_user_gender(user_id: int, gender: str) -> None:
     :param user_id: Идентификатор пользователя.
     :param gender: Пол пользователя.
     """
-    # Записываем поле "gender" для пользователя
     save_dir = Path(__file__).resolve().parent.parent / 'save'
     users_file = save_dir / 'users.json'
     if users_file.exists():
@@ -202,11 +201,11 @@ def set_user_gender(user_id: int, gender: str) -> None:
             user_data["gender"] = gender
             break
     else:
-        # Если не нашли, добавим пользователя
         user_data = {
             "user_id": user_id,
             "username": "unknown_user",
-            "gender": gender
+            "gender": gender,
+            "free_trial_used": False  # по умолчанию
         }
         users_data.append(user_data)
 
@@ -314,3 +313,62 @@ def save_daily_limits(daily_limits: Dict[int, datetime]) -> None:
     data = {str(uid): dt.isoformat() for uid, dt in daily_limits.items()}
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+def get_free_trial_status(user_id: int) -> bool:
+    """
+    Получает статус использования бесплатной пробной подписки пользователем.
+
+    :param user_id: Идентификатор пользователя.
+    :return: True, если пользователь уже использовал бесплатную подписку, иначе False.
+    """
+    save_dir = Path(__file__).resolve().parent.parent / 'save'
+    users_file = save_dir / 'users.json'
+    if not users_file.exists():
+        return False
+    with open(users_file, 'r', encoding='utf-8') as f:
+        users_data = json.load(f)
+
+    for user_data in users_data:
+        if user_data["user_id"] == user_id:
+            return user_data.get("free_trial_used", False)
+    return False
+
+
+def set_free_trial_status(user_id: int, status: bool) -> None:
+    """
+    Устанавливает статус использования бесплатной пробной подписки для пользователя.
+
+    :param user_id: Идентификатор пользователя.
+    :param status: True, если пользователь использовал пробную подписку, иначе False.
+    """
+    save_dir = Path(__file__).resolve().parent.parent / 'save'
+    users_file = save_dir / 'users.json'
+    if users_file.exists():
+        with open(users_file, 'r', encoding='utf-8') as f:
+            users_data = json.load(f)
+    else:
+        users_data = [{
+            "user_id": user_id,
+            "username": "unknown_user",
+            "gender": None,
+            "free_trial_used": status
+        }]
+        with open(users_file, 'w', encoding='utf-8') as f:
+            json.dump(users_data, f, ensure_ascii=False, indent=2)
+        return
+
+    for user_data in users_data:
+        if user_data["user_id"] == user_id:
+            user_data["free_trial_used"] = status
+            break
+    else:
+        user_data = {
+            "user_id": user_id,
+            "username": "unknown_user",
+            "gender": None,
+            "free_trial_used": status
+        }
+        users_data.append(user_data)
+
+    with open(users_file, 'w', encoding='utf-8') as f:
+        json.dump(users_data, f, ensure_ascii=False, indent=2)

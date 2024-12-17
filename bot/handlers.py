@@ -33,7 +33,8 @@ from utils import (
     log_message, save_user_history, save_user_info,
     load_premium_users, save_premium_users,
     set_user_gender, get_user_gender,
-    load_daily_limits, save_daily_limits
+    load_daily_limits, save_daily_limits,
+    get_free_trial_status, set_free_trial_status
 )
 
 # import database
@@ -47,10 +48,13 @@ user_states: Dict[int, Dict[str, Any]] = {}
 # Возможные состояния:
 # None или отсутствует в словаре - обычный режим
 # "waiting_for_feedback" - ждем отзыв
+### NEW FEATURE: Добавляем состояния для пробной подписки
+# "choosing_free_trial" - пользователь нажал "Пробная подписка"
+# "confirming_free_trial" - пользователь выбирает "Да, хочу" или "Вернуться обратно"
 
 PREMIUM_USERS = load_premium_users()
 DAILY_LIMITS = load_daily_limits()
-MAIN_MENU_COMMANDS = ["Premium подписка", "Очистить историю", "Оставить отзыв", "Получить отзывы", "Добавить Premium пользователя"]
+MAIN_MENU_COMMANDS = ["Premium подписка", "Очистить историю", "Оставить отзыв", "Получить отзывы", "Добавить Premium пользователя", "Пробная подписка"]
 
 async def simulate_typing(context, chat_id):
     """
@@ -131,7 +135,7 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     total_chars = sum(len(msg["content"]) for msg in history)
     logger.debug(f"Общее количество символов в истории: {total_chars}")
-    print(total_chars)
+    # print(total_chars)
 
     summarization_happened = False
     if total_chars > MAX_CHAR_LIMIT:
@@ -215,11 +219,16 @@ def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
     :param user_id: ID пользователя.
     :return: Объект ReplyKeyboardMarkup с кнопками.
     """
-    buttons = [
-        [KeyboardButton("Premium подписка")],
-        [KeyboardButton("Оставить отзыв")],
-        [KeyboardButton("Очистить историю")]
-    ]
+    buttons = []
+
+    free_trial_used = get_free_trial_status(user_id)
+    if not free_trial_used:
+        buttons.append([KeyboardButton("Пробная подписка")])
+
+    buttons.append([KeyboardButton("Premium подписка")])
+    buttons.append([KeyboardButton("Оставить отзыв")])
+    buttons.append([KeyboardButton("Очистить историю")])
+
     if user_id in ADMIN_USER_ID:
         buttons.append([KeyboardButton("Получить отзывы")])
 
@@ -275,6 +284,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "1) Premium подписка\n"
         "2) Оставить отзыв\n"
         "3) Сбросить историю\n"
+        "4) Пробная подписка (если еще не была использована)\n"
     )
 
     await update.message.reply_text(message, reply_markup=get_main_menu(user_id))
@@ -301,6 +311,37 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         else:
             await ask_user_gender(update, context)
+            return
+        
+    if user_states.get(user_id, {}).get("choosing_free_trial", False):
+        # Пользователь выбирает между "Да, хочу!" и "Вернуться обратно"
+        if user_message == "Да, хочу!":
+            # Даем премиум на месяц
+            end_date = datetime.now() + timedelta(days=30)
+            PREMIUM_USERS[user_id] = end_date
+            save_premium_users(PREMIUM_USERS)
+            # Отмечаем, что пользователь использовал пробную подписку
+            set_free_trial_status(user_id, True)
+            response = (
+                "Отлично! Ваша пробная подписка активирована на 1 месяц!\n"
+                f"Теперь вы Premium пользователь до {end_date.strftime('%d.%m.%Y %H:%M')}.\n"
+                "Наслаждайтесь безлимитным доступом к FEELIX! 🚀"
+            )
+            user_states[user_id]["choosing_free_trial"] = False
+            await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+            log_message(user_id, "user", user_message)
+            log_message(user_id, "assistant", response)
+            return
+        elif user_message == "Вернуться обратно":
+            response = "Хорошо, возвращаемся в главное меню."
+            user_states[user_id]["choosing_free_trial"] = False
+            await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+            log_message(user_id, "user", user_message)
+            log_message(user_id, "assistant", response)
+            return
+        else:
+            # Если введено что-то другое, просто повторим кнопки
+            await present_free_trial_choice(update, context)
             return
         
     if user_states.get(user_id, {}).get("waiting_for_feedback"):
@@ -338,7 +379,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 response = (
                     f"Ваш дневной лимит исчерпан.\n"
                     f"Вы сможете продолжить общение через {hours} ч. и {minutes} мин.\n"
-                    "Для безлимитного общения оформите Premium подписку."
+                    "Для безлимитного общения оформите Premium подписку или используйте пробную подписку, если она вам доступна.\n\n"
+                    "Для оформления Premium подписки свяжитесь с менеджером: @feelix_manager"
                 )
                 await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
                 return
@@ -426,6 +468,16 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
             await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
             log_message(user_id, "user", user_message)
             log_message(user_id, "assistant", response)
+        return
+    
+    if user_message == "Пробная подписка":
+        free_trial_used = get_free_trial_status(user_id)
+        if free_trial_used or user_id in PREMIUM_USERS:
+            # На случай, если пользователь уже стал премиум или использовал пробную.
+            response = "Вы уже являетесь Premium пользователем FEELIX."
+            await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+            return
+        await present_free_trial_choice(update, context)
         return
 
     # Обычное сообщение (не команда из меню)
@@ -554,3 +606,26 @@ async def add_premium_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except (IndexError, ValueError):
         response = "Пожалуйста, укажите корректный USER_ID."
         await update.message.reply_text(response)
+
+async def present_free_trial_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Отображает пользователю информацию о пробной подписке и предлагает выбор:
+    "Да хочу" или "Вернуться обратно".
+
+    :param update: Объект Update от Telegram.
+    :param context: Контекст приложения.
+    """
+    user_id = update.effective_user.id
+    message = (
+        "✨ Пробная подписка на 1 месяц!\n"
+        "🚀 Вы сможете общаться без ограничений целый месяц!\n"
+        "Это абсолютно бесплатно и предоставляется только один раз.\n\n"
+        "Хотите попробовать?"
+    )
+    buttons = [
+        [KeyboardButton("Да, хочу!"), KeyboardButton("Вернуться обратно")]
+    ]
+    if user_id not in user_states:
+        user_states[user_id] = {}
+    user_states[user_id]["choosing_free_trial"] = True
+    await update.message.reply_text(message, reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
