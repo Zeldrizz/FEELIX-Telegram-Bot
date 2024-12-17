@@ -9,17 +9,46 @@ from config import LOG_DIR, SYSTEM_PROMPT
 from logging_config import logger
 from datetime import datetime
 
+
 def hash_data(data: Any, algorithm: str = 'sha256') -> str:
+    """
+    Возвращает хеш строки, полученной из данных, с использованием указанного алгоритма.
+
+    :param data: Данные для хеширования.
+    :param algorithm: Алгоритм хеширования (по умолчанию 'sha256').
+    :return: Хеш-строка.
+    """
     return hashlib.new(algorithm, str(data).encode('utf-8')).hexdigest()
 
+
 def get_user_history_path(user_id: int) -> str:
+    """
+    Получает путь к файлу истории разговоров пользователя.
+
+    Если директория для пользователя не существует, она создаётся.
+
+    :param user_id: Идентификатор пользователя.
+    :return: Путь к файлу 'conversation_history.json' для данного пользователя.
+    """
     user_hash = hash_data(user_id)
     user_log_dir = os.path.join(LOG_DIR, f"user_{user_hash}")
     if not os.path.exists(user_log_dir):
         os.makedirs(user_log_dir)
     return os.path.join(user_log_dir, 'conversation_history.json')
 
+
 def load_user_history(user_id: int) -> List[Dict[str, str]]:
+    """
+    Загружает историю разговоров пользователя из файла.
+
+    Если файл истории не существует, инициализирует историю с системным промптом и
+    информацией о поле пользователя, если оно задано.
+
+    Также проверяет наличие упоминания пола в истории и добавляет его при необходимости.
+
+    :param user_id: Идентификатор пользователя.
+    :return: Список сообщений в истории разговоров.
+    """
     path = get_user_history_path(user_id)
     if not os.path.exists(path):
         # Инициализируем историю с system промптом
@@ -45,12 +74,26 @@ def load_user_history(user_id: int) -> List[Dict[str, str]]:
 
         return history
 
+
 def save_user_history(user_id: int, history: List[Dict[str, str]]) -> None:
+    """
+    Сохраняет историю разговоров пользователя в файл.
+
+    :param user_id: Идентификатор пользователя.
+    :param history: Список сообщений для сохранения.
+    """
     path = get_user_history_path(user_id)
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
+
 def archive_user_history(user_id: int) -> None:
+    """
+    Архивирует текущую историю разговоров пользователя, перемещая её в директорию архива,
+    и инициализирует новую пустую историю с системным промптом и информацией о поле.
+
+    :param user_id: Идентификатор пользователя.
+    """
     user_hash = hash_data(user_id)
     user_log_dir = os.path.join(LOG_DIR, f"user_{user_hash}")
     if not os.path.exists(user_log_dir):
@@ -73,7 +116,17 @@ def archive_user_history(user_id: int) -> None:
         history.append({"role": "system", "content": f"Ваш собеседник - {gender.lower()}."})
     save_user_history(user_id, history)
 
+
 def log_message(user_id: int, role: str, message: str) -> None:
+    """
+    Записывает сообщение пользователя или системы в лог-файл истории разговоров.
+
+    Если файл истории не существует, создаёт его и добавляет начальную строку.
+
+    :param user_id: Идентификатор пользователя.
+    :param role: Роль отправителя сообщения ('user' или 'system').
+    :param message: Текст сообщения.
+    """
     user_log_dir = os.path.join(LOG_DIR, f"user_{hash_data(user_id)}")
     if not os.path.exists(user_log_dir):
         os.makedirs(user_log_dir)
@@ -88,7 +141,16 @@ def log_message(user_id: int, role: str, message: str) -> None:
         timestamp = time.strftime("%d/%m/%y %H:%M", time.localtime())
         f.write(f"{role.upper()} [{hash_data(user_id)}], [{timestamp}]: {message}\n")
 
+
 def save_user_info(user_id: int, username: str) -> None:
+    """
+    Сохраняет информацию о пользователе в файл 'users.json'.
+
+    Если пользователь уже существует, не перезаписывает информацию.
+
+    :param user_id: Идентификатор пользователя.
+    :param username: Имя пользователя.
+    """
     from config import TOKEN  # чтобы не было цикличного импорта
 
     save_dir = Path(__file__).resolve().parent.parent / 'save'
@@ -116,7 +178,16 @@ def save_user_info(user_id: int, username: str) -> None:
     with open(users_file, 'w', encoding='utf-8') as f:
         json.dump(users_data, f, ensure_ascii=False, indent=2)
 
+
 def set_user_gender(user_id: int, gender: str) -> None:
+    """
+    Устанавливает пол пользователя и сохраняет его в файле 'users.json'.
+
+    Если пользователь не найден, добавляет его с указанным полом и именем "unknown_user".
+
+    :param user_id: Идентификатор пользователя.
+    :param gender: Пол пользователя.
+    """
     # Записываем поле "gender" для пользователя
     save_dir = Path(__file__).resolve().parent.parent / 'save'
     users_file = save_dir / 'users.json'
@@ -142,7 +213,14 @@ def set_user_gender(user_id: int, gender: str) -> None:
     with open(users_file, 'w', encoding='utf-8') as f:
         json.dump(users_data, f, ensure_ascii=False, indent=2)
 
+
 def get_user_gender(user_id: int) -> str:
+    """
+    Получает пол пользователя из файла 'users.json'.
+
+    :param user_id: Идентификатор пользователя.
+    :return: Строка с полом пользователя или None, если не задан.
+    """
     save_dir = Path(__file__).resolve().parent.parent / 'save'
     users_file = save_dir / 'users.json'
     if not users_file.exists():
@@ -157,6 +235,11 @@ def get_user_gender(user_id: int) -> str:
 
 
 def save_premium_users(premium_users: Dict[int, datetime]) -> None:
+    """
+    Сохраняет информацию о премиум-пользователях в файл 'premium_users.json'.
+
+    :param premium_users: Словарь с идентификаторами пользователей и датами окончания премиума.
+    """
     save_dir = Path(__file__).resolve().parent.parent / 'save'
     if not save_dir.exists():
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -166,7 +249,13 @@ def save_premium_users(premium_users: Dict[int, datetime]) -> None:
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+
 def load_premium_users() -> Dict[int, datetime]:
+    """
+    Загружает информацию о премиум-пользователях из файла 'premium_users.json'.
+
+    :return: Словарь с идентификаторами пользователей и датами окончания премиума.
+    """
     from datetime import datetime
     save_dir = Path(__file__).resolve().parent.parent / 'save'
     filepath = save_dir / 'premium_users.json'
@@ -183,3 +272,45 @@ def load_premium_users() -> Dict[int, datetime]:
         except Exception as e:
             logger.error(f"Ошибка при загрузке премиум-пользователя {uid_str}: {e}")
     return premium_users
+
+
+def load_daily_limits() -> Dict[int, datetime]:
+    """
+    Загружает информацию о daily_limit_time для пользователей из файла 'daily_limits.json'.
+
+    Формат файла: { "user_id_str": "iso_datetime_str", ... }
+
+    :return: Словарь с идентификаторами пользователей и соответствующими datetime объектами.
+    """
+    save_dir = Path(__file__).resolve().parent.parent / 'save'
+    filepath = save_dir / 'daily_limits.json'
+    if not filepath.exists():
+        return {}
+    with open(filepath, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    daily_limits = {}
+    for uid_str, iso_time in data.items():
+        try:
+            uid = int(uid_str)
+            dt = datetime.fromisoformat(iso_time)
+            daily_limits[uid] = dt
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке daily_limit для пользователя {uid_str}: {e}")
+    return daily_limits
+
+
+def save_daily_limits(daily_limits: Dict[int, datetime]) -> None:
+    """
+    Сохраняет информацию о daily_limit_time для пользователей в файл 'daily_limits.json'.
+
+    Формат: { "user_id_str": "iso_datetime_str", ... }
+
+    :param daily_limits: Словарь с идентификаторами пользователей и соответствующими datetime объектами.
+    """
+    save_dir = Path(__file__).resolve().parent.parent / 'save'
+    if not save_dir.exists():
+        save_dir.mkdir(parents=True, exist_ok=True)
+    filepath = save_dir / 'daily_limits.json'
+    data = {str(uid): dt.isoformat() for uid, dt in daily_limits.items()}
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)

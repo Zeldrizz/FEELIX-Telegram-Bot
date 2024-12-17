@@ -4,7 +4,7 @@ from config import TOKEN
 from handlers import (
     start,
     help_command,
-    handle_text_with_limit,
+    handle_text,
     add_premium_user,
     error_handler
 )
@@ -22,7 +22,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("add_premium", add_premium_user))
 
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_with_limit))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))
 
     # Глобальный обработчик ошибок
     application.add_error_handler(error_handler)

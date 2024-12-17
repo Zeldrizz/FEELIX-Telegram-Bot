@@ -25,14 +25,15 @@ from logging_config import logger
 
 from config import (
     ADMIN_USER_ID, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_GATEWAY_ID,
-    FEEDBACK_FILE, GROQ_API_KEYS, MAX_CHAR_LIMIT,
+    FEEDBACK_FILE, GROQ_API_KEYS, MAX_CHAR_LIMIT, DAILY_LIMIT_CHARS,
     SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID
 )
 from utils import (
-    archive_user_history, hash_data, load_user_history,
+    archive_user_history, load_user_history,
     log_message, save_user_history, save_user_info,
     load_premium_users, save_premium_users,
-    set_user_gender, get_user_gender
+    set_user_gender, get_user_gender,
+    load_daily_limits, save_daily_limits
 )
 
 # import database
@@ -42,14 +43,22 @@ nest_asyncio.apply()
 api_key_cycle = cycle(zip(GROQ_API_KEYS, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_GATEWAY_ID))
 
 # Состояния пользователя
-user_states: Dict[int, str] = {}  # user_id: state
+user_states: Dict[int, Dict[str, Any]] = {}
 # Возможные состояния:
 # None или отсутствует в словаре - обычный режим
 # "waiting_for_feedback" - ждем отзыв
 
 PREMIUM_USERS = load_premium_users()
+DAILY_LIMITS = load_daily_limits()
+MAIN_MENU_COMMANDS = ["Premium подписка", "Очистить историю", "Оставить отзыв", "Получить отзывы", "Добавить Premium пользователя"]
 
 async def simulate_typing(context, chat_id):
+    """
+    Имитирует процесс набора текста ботом, отображая статус "печатает" в чат.
+
+    :param context: Контекст приложения.
+    :param chat_id: Идентификатор чата.
+    """
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await asyncio.sleep(random.randint(1, 3))
 
@@ -104,11 +113,15 @@ async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) ->
 
 async def add_message(user_id: int, role: str, content: List[str]) -> bool:
     """
-    Добавляет сообщение в историю разговора пользователя и выполняет суммаризацию при необходимости.
+    Добавляет сообщение в историю разговора пользователя.
+    Проверяет превышение MAX_CHAR_LIMIT для суммаризации.
+    Проверяет превышение DAILY_LIMIT_CHARS для бесплатных пользователей и устанавливает суточный лимит при превышении.
+    Возвращает True, если была выполнена суммаризация.
 
-    :param user_id: ID пользователя.
-    :param role: Роль отправителя ('user', 'assistant', 'system').
-    :param content: Список текстов сообщений.
+    :param user_id: Идентификатор пользователя.
+    :param role: Роль отправителя сообщения ('user' или 'assistant').
+    :param content: Список текстовых сообщений для добавления.
+    :return: Булево значение, указывающее, была ли выполнена суммаризация.
     """
     history = load_user_history(user_id)
     for message in content:
@@ -118,9 +131,11 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     total_chars = sum(len(msg["content"]) for msg in history)
     logger.debug(f"Общее количество символов в истории: {total_chars}")
+    print(total_chars)
 
+    summarization_happened = False
     if total_chars > MAX_CHAR_LIMIT:
-        logger.info(f"Лимит символов ({MAX_CHAR_LIMIT}) превышен для пользователя {user_id}. Выполняется суммаризация.")
+        logger.info(f"Превышен MAX_CHAR_LIMIT для пользователя {user_id}. Суммаризация...")
         summarized_content = await summarize_conversation(user_id, history)
 
         new_history = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -131,13 +146,15 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
         
         save_user_history(user_id, new_history)
         logger.info(f"Суммаризация для пользователя {user_id} выполнена и история сброшена.")
+        summarization_happened = True
 
-        if user_id not in PREMIUM_USERS:
-            if user_id not in user_states:
-                user_states[user_id] = {}
-            user_states[user_id]["last_summary"] = datetime.now()
-        return True
-    return False
+    if user_id not in PREMIUM_USERS and total_chars > DAILY_LIMIT_CHARS:
+        # Если еще не установлено время ограничения, устанавливаем
+        if user_id not in DAILY_LIMITS:
+            DAILY_LIMITS[user_id] = datetime.now()
+            save_daily_limits(DAILY_LIMITS)
+
+    return summarization_happened
 
 async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     """
@@ -145,6 +162,8 @@ async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None,
 
     :param user_id: ID пользователя.
     :param prompt_ru: Текст сообщения пользователя.
+    :param update: Объект Update от Telegram (опционально).
+    :param context: Контекст приложения (опционально).
     :return: Ответ от бота или сообщение об ошибке.
     """
     summarization_happened = await add_message(user_id, "user", [prompt_ru])
@@ -181,16 +200,6 @@ async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None,
 
         bot_reply = result['choices'][0]['message']['content']
         await add_message(user_id, "assistant", [bot_reply])
-
-        if summarization_happened and user_id not in PREMIUM_USERS and update is not None:
-            await update.message.reply_text(
-                "Ваш дневной лимит общения с FEELIX исчерпан.\nВы сможете продолжить общение через 24 часа.\n\n"
-                "Для безлимитного общения оформите Premium подписку.",
-                reply_markup=get_main_menu(user_id)
-            )
-
-        return bot_reply
-
         return bot_reply
     except httpx.HTTPStatusError as http_err:
         logger.error(f"HTTP ошибка при получении ответа от Groq API для пользователя {user_id}: {http_err}")
@@ -240,27 +249,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     await update.message.reply_text(message, parse_mode="Markdown")
 
-#     message = r"""
-# ✨ *Наши принципы* ✨
-
-# 1️⃣ **Полная анонимность и безопасность** 🔒  
-# Мы обеспечиваем полную конфиденциальность общения:  
-# \- 🔐 Все данные *шифруются* для защиты чатов пользователей\.  
-# \- 🚫 Разработчики и никто более не могут установить автора тех или иных сообщений\.
-
-# 2️⃣ **Доступность 24/7** ⏰  
-# FEELIX всегда рядом:  
-# \- 🤝 FEELIX всегда рядом — вы можете обратиться в *любое время суток*, и наш бот вас поддержит\.
-
-# 3️⃣ **Эмпатия и человечность** ❤️  
-# Мы создаем чат\-бота, который:  
-# \- 😊 *Понимает ваши эмоции*\;  
-# \- 🤗 *Поддерживает вас*\;  
-# \- 🫂 Общается так, как это сделал бы *настоящий друг*\.
-# """
-
-    # await update.message.reply_text(message, parse_mode="MarkdownV2")
-
     if user_id not in user_states:
         user_states[user_id] = {}
     user_states[user_id]["choosing_gender"] = True
@@ -296,17 +284,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Обрабатывает входящий текст от пользователя, включая команды, отзывы и текстовые сообщения.
-    Управляет состояниями пользователя и вызывает соответствующие функции.
+    Обрабатывает входящие текстовые сообщения от пользователя.
+    В зависимости от состояния пользователя и содержимого сообщения выполняет соответствующие действия.
 
     :param update: Объект Update от Telegram.
     :param context: Контекст приложения.
     """
     user_id = update.effective_user.id
-    username = update.effective_user.username or update.effective_user.full_name
     user_message = update.message.text.strip()
-    save_user_info(user_id, username)
+    username = update.effective_user.username or update.effective_user.full_name
 
+    # Проверка пола
     if user_states.get(user_id, {}).get("choosing_gender", False):
         if user_message in ["Мужской", "Женский", "Не хочу указывать"]:
             await handle_gender_choice_inner(update, context, user_message)
@@ -314,7 +302,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         else:
             await ask_user_gender(update, context)
             return
-
+        
     if user_states.get(user_id, {}).get("waiting_for_feedback"):
         feedback_text = user_message
         feedback_dir = os.path.dirname(FEEDBACK_FILE)
@@ -330,7 +318,54 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         log_message(user_id, "assistant", response)
         user_states[user_id]["waiting_for_feedback"] = False
         return
-    
+
+    # Если премиум - никаких ограничений
+    if user_id in PREMIUM_USERS:
+        # Премиум пользователь общается без ограничений
+        await process_user_message(user_id, user_message, update, context)
+        return
+
+    # Для бесплатного пользователя проверяем daily_limit_time
+    daily_limit_time = DAILY_LIMITS.get(user_id)
+    if daily_limit_time:
+        diff = datetime.now() - daily_limit_time
+        if diff.total_seconds() < 86400:
+            # 24 часа не прошло
+            if user_message not in MAIN_MENU_COMMANDS:
+                # Ограничение действует
+                hours = int((86400 - diff.total_seconds()) // 3600)
+                minutes = int(((86400 - diff.total_seconds()) % 3600) // 60)
+                response = (
+                    f"Ваш дневной лимит исчерпан.\n"
+                    f"Вы сможете продолжить общение через {hours} ч. и {minutes} мин.\n"
+                    "Для безлимитного общения оформите Premium подписку."
+                )
+                await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+                return
+            else:
+                # Нажал кнопку из меню - обрабатываем ниже
+                pass
+        else:
+            # 24 часа прошло - снимаем ограничение
+            del DAILY_LIMITS[user_id]
+            save_daily_limits(DAILY_LIMITS)
+
+    # Здесь либо нет daily_limit_time, либо 24 часа прошли и мы его сняли,
+    # либо пользователь нажал кнопку из главного меню
+    await process_user_message(user_id, user_message, update, context)
+
+async def process_user_message(user_id: int, user_message: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обрабатывает команды главного меню или обычный текстовый ввод пользователя.
+
+    :param user_id: Идентификатор пользователя.
+    :param user_message: Текст сообщения пользователя.
+    :param update: Объект Update от Telegram.
+    :param context: Контекст приложения.
+    """
+    username = update.effective_user.username or update.effective_user.full_name
+    save_user_info(user_id, username)
+
     if user_message == "Premium подписка":
         await handle_premium_subscription(update, context)
         return
@@ -361,8 +396,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         log_message(user_id, "user", user_message)
         log_message(user_id, "assistant", response)
 
-        if user_id in user_states and "last_summary" in user_states[user_id]:
-            del user_states[user_id]["last_summary"]
+        if "daily_limit_time" in user_states.get(user_id, {}):
+            del user_states[user_id]["daily_limit_time"]
 
         return
 
@@ -393,17 +428,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             log_message(user_id, "assistant", response)
         return
 
-    logger.info(f"Получено сообщение от пользователя {user_id}: {user_message}")
+    # Обычное сообщение (не команда из меню)
     log_message(user_id, "user", user_message)
-
+    await simulate_typing(context, update.effective_chat.id)
     try:
-        await simulate_typing(context, update.effective_chat.id)
-        response = await get_groq_response(user_id, user_message)
+        response = await get_groq_response(user_id, user_message, update, context)
     except Exception as e:
-        logger.error(f"Ошибка при обработке сообщения от пользователя {user_id}: {e}")
+        logger.error(f"Ошибка при обработке сообщения: {e}")
         response = "Извините, произошла ошибка. Пожалуйста, попробуйте позже."
 
-    logger.info(f"Ответ бота для пользователя {user_id}: {response}")
     log_message(user_id, "assistant", response)
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
 
@@ -453,6 +486,7 @@ async def handle_gender_choice_inner(update: Update, context: ContextTypes.DEFAU
 async def handle_premium_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Обрабатывает запрос пользователя на информацию о Premium подписке.
+    Предоставляет информацию о текущем статусе подписки или инструкциях по её оформлению.
 
     :param update: Объект Update от Telegram.
     :param context: Контекст приложения.
@@ -466,8 +500,8 @@ async def handle_premium_subscription(update: Update, context: ContextTypes.DEFA
             save_premium_users(PREMIUM_USERS)
             response = (
                 "Ваша Premium подписка закончилась.\n\n"
-                "Premium подписка длится 1 месяц и стоит 99 рублей.\n"
-                "Вы получаете безлимитный доступ к общению с FEELIX.\n\n"
+                "✨ Premium подписка длится 1 месяц и стоит 99 рублей.\n"
+                "🚀 Безлимитный доступ к FEELIX!\n\n"
                 "Для оформления свяжитесь с менеджером: @feelix_manager"
             )
         else:
@@ -478,15 +512,17 @@ async def handle_premium_subscription(update: Update, context: ContextTypes.DEFA
             )
     else:
         response = (
-            "Premium подписка длится 1 месяц и стоит 99 рублей.\n"
-            "Вы получаете безлимитный доступ к общению с FEELIX.\n\n"
+            "✨ Premium подписка длится 1 месяц и стоит 99 рублей.\n"
+            "🚀 Безлимитный доступ к общению с FEELIX.\n"
+            "💬 Нет ограничений в количестве сообщений!\n\n"
             "Для оформления свяжитесь с менеджером: @feelix_manager"
         )
     await update.message.reply_text(response)
 
 async def add_premium_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Добавляет Premium подписку пользователю (только для менеджера).
+    Обрабатывает команду добавления пользователя в список Premium.
+    Только менеджер может выполнять эту команду.
 
     :param update: Объект Update от Telegram.
     :param context: Контекст приложения.
@@ -500,67 +536,21 @@ async def add_premium_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         target_user_id = int(context.args[0])
         end_date = datetime.now() + timedelta(days=30)
         PREMIUM_USERS[target_user_id] = end_date
-        end_date = PREMIUM_USERS[target_user_id]
         save_premium_users(PREMIUM_USERS)
         response = (
             f"Пользователь {target_user_id} добавлен как Premium. Подписка действует до {end_date.strftime('%d.%m.%Y %H:%M')}."
         )
         await update.message.reply_text(response)
         try:
-            await context.bot.send_message(target_user_id, f"Поздравляем!\nВы стали Premium пользователем FEELIXs!\n\nПодписка действует до {end_date.strftime('%d.%m.%Y %H:%M')}.")
+            premium_message = (
+                "🎉 Поздравляем! Вы стали Premium пользователем FEELIX! 🎉\n\n"
+                "Теперь вас ничто не ограничивает! 🚀\n"
+                "Вы можете свободно общаться с FEELIX в любое время, без ограничений!\n\n"
+                f"Подписка действует до {end_date.strftime('%d.%m.%Y %H:%M')}.\n"
+            )
+            await context.bot.send_message(target_user_id, premium_message)
         except Exception:
             logger.warning("Не удалось отправить сообщение пользователю о премиуме.")
     except (IndexError, ValueError):
         response = "Пожалуйста, укажите корректный USER_ID."
         await update.message.reply_text(response)
-
-async def handle_text_with_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Обрабатывает текстовые сообщения от пользователя с учётом лимита сообщений для обычных пользователей.
-    Если лимит превышен, предлагает оформить Premium подписку.
-
-    :param update: Объект Update от Telegram.
-    :param context: Контекст приложения.
-    """
-    user_id = update.effective_user.id
-
-    if user_states.get(user_id, {}).get("choosing_gender", False):
-        user_message = update.message.text.strip()
-        if user_message in ["Мужской", "Женский", "Не хочу указывать"]:
-            await handle_gender_choice_inner(update, context, user_message)
-        else:
-            await ask_user_gender(update, context)
-        return
-
-    if user_id in PREMIUM_USERS:
-        end_date = PREMIUM_USERS[user_id]
-        if datetime.now() > end_date:
-            del PREMIUM_USERS[user_id]
-            save_premium_users(PREMIUM_USERS)
-
-    if user_id in PREMIUM_USERS:
-        await handle_text(update, context)
-    else:
-        last_summary = user_states.get(user_id, {}).get("last_summary", None)
-        if last_summary:
-            diff = datetime.now() - last_summary
-            if diff.total_seconds() < 86400:  # 24 часа не прошло
-                remaining = timedelta(seconds=(86400 - diff.total_seconds()))
-                hours = remaining.seconds // 3600
-                minutes = (remaining.seconds % 3600) // 60
-                response = (
-                    f"Ваш лимит на сегодня исчерпан.\nВы сможете продолжить общение через {hours} ч. и {minutes} мин.\n"
-                    "Для безлимитного общения оформите Premium подписку."
-                )
-                await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
-                return
-            else:
-                if user_id not in user_states:
-                    user_states[user_id] = {}
-
-                if "last_summary" in user_states[user_id]:
-                    del user_states[user_id]["last_summary"]
-
-                await handle_text(update, context)
-        else:
-            await handle_text(update, context)
