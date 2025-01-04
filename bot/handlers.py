@@ -272,6 +272,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = (
         "Привет! Я FEELIX – ваш душевный собеседник, готовый поддержать в любую минуту! ✨\n\n"
         "Я все еще нахожусь на стадии активной разработки, поэтому мои ответы могут быть неидеальными. Спасибо за понимание!\n\n"
+        "Не забудьте подписаться на наш [канал](https://t.me/feelix_bot_channel)!\n\n"
         "Продолжая, вы соглашаетесь с "
         "[правилами](https://drive.google.com/file/d/1DGNBSyhqGxPDWLsHVvze3FJFmK08BLUq/view?usp=sharing) и "
         "[политикой](https://drive.google.com/file/d/1Pyec6cq_OCHFngho8CK5QFfq2PsEjwl5/view?usp=sharing)."
