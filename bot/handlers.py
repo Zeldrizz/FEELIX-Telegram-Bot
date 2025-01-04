@@ -34,7 +34,8 @@ from utils import (
     load_premium_users, save_premium_users,
     set_user_gender, get_user_gender,
     load_daily_limits, save_daily_limits,
-    get_free_trial_status, set_free_trial_status
+    get_free_trial_status, set_free_trial_status,
+    load_daily_usage, save_daily_usage
 )
 
 # import database
@@ -55,6 +56,8 @@ user_states: Dict[int, Dict[str, Any]] = {}
 PREMIUM_USERS = load_premium_users()
 DAILY_LIMITS = load_daily_limits()
 MAIN_MENU_COMMANDS = ["Premium подписка", "Очистить историю", "Оставить отзыв", "Получить отзывы", "Добавить Premium пользователя", "Пробная подписка"]
+DAILY_USAGE = load_daily_usage()
+DAILY_LIMIT = DAILY_LIMIT_CHARS  # суточный лимит для бесплатных
 
 async def simulate_typing(context, chat_id):
     """
@@ -321,12 +324,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_message = update.message.text.strip()
     username = update.effective_user.username or update.effective_user.full_name
 
-    # Проверка пола
+    gender = get_user_gender(user_id)
+    if not gender:
+        # Пол не выбран => принуждаем выбирать
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["choosing_gender"] = True
+        
+        await ask_user_gender(update, context)
+
+    # 2) Если пользователь уже в состоянии выбора пола, 
+    #    проверяем, не нажал ли он одну из кнопок «Мужской», «Женский» или «Не хочу указывать».
     if user_states.get(user_id, {}).get("choosing_gender", False):
         if user_message in ["Мужской", "Женский", "Не хочу указывать"]:
             await handle_gender_choice_inner(update, context, user_message)
+            save_user_info(user_id, username)
             return
         else:
+            # Просим повторно ввести
             await ask_user_gender(update, context)
             return
         
@@ -377,43 +392,79 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         user_states[user_id]["waiting_for_feedback"] = False
         return
 
+    if user_message in MAIN_MENU_COMMANDS:
+        # Просто вызываем process_user_message без проверки лимита
+        await process_user_message(user_id, user_message, update, context)
+        return
+
     # Если премиум - никаких ограничений
     if user_id in PREMIUM_USERS:
         # Премиум пользователь общается без ограничений
         await process_user_message(user_id, user_message, update, context)
         return
 
-    # Для бесплатного пользователя проверяем daily_limit_time
-    daily_limit_time = DAILY_LIMITS.get(user_id)
-    if daily_limit_time:
-        diff = datetime.now() - daily_limit_time
-        if diff.total_seconds() < 86400:
-            # 24 часа не прошло
-            if user_message not in MAIN_MENU_COMMANDS:
-                # Ограничение действует
-                hours = int((86400 - diff.total_seconds()) // 3600)
-                minutes = int(((86400 - diff.total_seconds()) % 3600) // 60)
-                response = (
-                    f"Ваш дневной лимит исчерпан.\n"
-                    f"Вы сможете продолжить общение через {hours} ч. и {minutes} мин.\n"
-                    "Для безлимитного общения оформите Premium подписку или используйте пробную подписку, если она вам доступна.\n\n"
-                    "Для оформления Premium подписки свяжитесь с менеджером: @feelix_manager"
-                )
-                await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
-                return
-            else:
-                # Нажал кнопку из меню - обрабатываем ниже
-                pass
-        else:
-            # 24 часа прошло - снимаем ограничение
-            del DAILY_LIMITS[user_id]
-            save_daily_limits(DAILY_LIMITS)
+    current_time = datetime.now()
+    usage_info = DAILY_USAGE.get(str(user_id))
+    if not usage_info:
+        # Если данных нет, инициализируем
+        usage_info = {
+            "usage": 0,
+            "reset_time": (current_time + timedelta(hours=24)).isoformat()
+        }
+        DAILY_USAGE[str(user_id)] = usage_info
+        save_daily_usage(DAILY_USAGE)
 
-    # Здесь либо нет daily_limit_time, либо 24 часа прошли и мы его сняли,
-    # либо пользователь нажал кнопку из главного меню
-    await process_user_message(user_id, user_message, update, context)
+    usage = usage_info["usage"]
+    reset_time_str = usage_info["reset_time"]
+    reset_time = datetime.fromisoformat(reset_time_str)
 
-async def process_user_message(user_id: int, user_message: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Если 24 часа уже прошли, сбросим лимит
+    if current_time > reset_time:
+        usage = 0
+        reset_time = current_time + timedelta(hours=24)
+        usage_info["usage"] = usage
+        usage_info["reset_time"] = reset_time.isoformat()
+        DAILY_USAGE[str(user_id)] = usage_info
+        save_daily_usage(DAILY_USAGE)
+
+    # 1) Сначала проверим сообщение пользователя
+    msg_len = len(user_message)
+    if usage + msg_len > DAILY_LIMIT:
+        # Превышаем лимит даже без ответа бота
+        diff = reset_time - current_time
+        hours = diff.seconds // 3600
+        minutes = (diff.seconds % 3600) // 60
+        response = (
+            f"Ваш суточный лимит в {DAILY_LIMIT} символов уже исчерпан.\n"
+            f"Сможете продолжить общение через {hours} ч. {minutes} мин.\n\n"
+            "Для безлимитного общения оформите Premium подписку или используйте пробную подписку."
+        )
+        await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+        return
+
+    # Если пока что проходим, то сперва прибавим сообщение пользователя:
+    usage += msg_len
+    usage_info["usage"] = usage
+    DAILY_USAGE[str(user_id)] = usage_info
+    save_daily_usage(DAILY_USAGE)
+
+    # 2) Генерируем ответ бота
+    bot_reply = await process_user_message(user_id, user_message, update, context)
+
+    # 3) Прибавляем длину ответа к usage
+    if bot_reply is not None:
+        reply_len = len(bot_reply)
+        usage += reply_len
+        if usage > DAILY_LIMIT:
+            # Если после ответа бота мы превысили суточный лимит —
+            # пользователь просто уже не сможет отправить следующее сообщение
+            # до reset_time. Сам ответ уже выдан.
+            usage = DAILY_LIMIT  # "забиваем" usage в значение, не выходящее за пределы
+        usage_info["usage"] = usage
+        DAILY_USAGE[str(user_id)] = usage_info
+        save_daily_usage(DAILY_USAGE)
+
+async def process_user_message(user_id: int, user_message: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     """
     Обрабатывает команды главного меню или обычный текстовый ввод пользователя.
 
@@ -508,6 +559,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     log_message(user_id, "assistant", response)
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+    return response
 
 def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -539,18 +591,27 @@ async def handle_gender_choice_inner(update: Update, context: ContextTypes.DEFAU
     :param context: Контекст приложения.
     :param choice: Выбор пользователя ('Мужской', 'Женский', 'Не хочу указывать').
     """
-    global SYSTEM_PROMPT
     user_id = update.effective_user.id
 
     set_user_gender(user_id, choice)
+
+    if user_id not in user_states:
+        user_states[user_id] = {}
+    user_states[user_id]["choosing_gender"] = False
 
     if choice in ["Мужской", "Женский"]:
         response = f"Спасибо! Я учту, что вы выбрали {choice.lower()} пол."
     else:
         response = "Спасибо! Продолжаем."
 
+    # Завершаем состояние выбора пола
     user_states[user_id]["choosing_gender"] = False
+
+    # Ответ пользователю
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+
+    bot_reply = await get_groq_response(user_id, "Привет", update, context)
+    await update.message.reply_text(bot_reply)
 
 async def handle_premium_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -569,7 +630,7 @@ async def handle_premium_subscription(update: Update, context: ContextTypes.DEFA
             save_premium_users(PREMIUM_USERS)
             response = (
                 "Ваша Premium подписка закончилась.\n\n"
-                "✨ Premium подписка длится 1 месяц и стоит 99 рублей.\n"
+                "✨ Premium подписка длится 1 месяц и стоит 199 рублей.\n"
                 "🚀 Безлимитный доступ к FEELIX!\n\n"
                 "Для оформления свяжитесь с менеджером: @feelix_manager"
             )
@@ -581,7 +642,7 @@ async def handle_premium_subscription(update: Update, context: ContextTypes.DEFA
             )
     else:
         response = (
-            "✨ Premium подписка длится 1 месяц и стоит 99 рублей.\n"
+            "✨ Premium подписка длится 1 месяц и стоит 199 рублей.\n"
             "🚀 Безлимитный доступ к общению с FEELIX.\n"
             "💬 Нет ограничений в количестве сообщений!\n\n"
             "Для оформления свяжитесь с менеджером: @feelix_manager"

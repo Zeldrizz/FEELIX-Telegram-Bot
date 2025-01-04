@@ -372,3 +372,33 @@ def set_free_trial_status(user_id: int, status: bool) -> None:
 
     with open(users_file, 'w', encoding='utf-8') as f:
         json.dump(users_data, f, ensure_ascii=False, indent=2)
+
+def load_daily_usage() -> dict:
+    """
+    Загружает информацию о суточном использовании символов (как пользователем, так и ботом).
+    Пример структуры:
+    {
+      "123456789": {
+         "usage": 1200,
+         "reset_time": "2025-01-05T12:00:00"
+      },
+      ...
+    }
+    """
+    save_dir = Path(__file__).resolve().parent.parent / 'save'
+    filepath = save_dir / 'daily_usage.json'
+    if not filepath.exists():
+        return {}
+    with open(filepath, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_daily_usage(daily_usage: dict) -> None:
+    """
+    Сохраняет структуру с расходом символов и временем сброса.
+    """
+    save_dir = Path(__file__).resolve().parent.parent / 'save'
+    if not save_dir.exists():
+        save_dir.mkdir(parents=True, exist_ok=True)
+    filepath = save_dir / 'daily_usage.json'
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(daily_usage, f, ensure_ascii=False, indent=2)
