@@ -8,6 +8,8 @@ env/
 logs/
 *.log
 
+database/
+
 feedbacks/
 feedbacks.txt
 

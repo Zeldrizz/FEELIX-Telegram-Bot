@@ -38,7 +38,7 @@ from utils import (
     load_daily_usage, save_daily_usage
 )
 
-# import database
+import database
 
 nest_asyncio.apply()
 
@@ -137,8 +137,6 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
     total_chars = sum(len(msg["content"]) for msg in history)
     logger.debug(f"Общее количество символов в истории: {total_chars}")
 
-    print(total_chars)
-
     summarization_happened = False
 
     # Если пользователь не премиум и превысили 10 000 символов:
@@ -200,10 +198,16 @@ async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None,
             "Content-Type": "application/json"
         }
 
-        # similar_messages = database.db_get_similar(user_id, prompt_ru)
+        similar_messages = database.db_get_similar(user_id, prompt_ru)
         history = load_user_history(user_id)
-        # for message in similar_messages:
-            # history.append({"role": "user", "content": message})
+        
+        for message in similar_messages:
+            history.append({
+                "role": "system",
+                "content": f"Ранее пользователь писал (похоже на текущий запрос): {message}"
+            })
+
+        database.db_handle_messages(user_id, "user", [prompt_ru])
 
         data = {
             "messages": history,
@@ -436,7 +440,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         hours = diff.seconds // 3600
         minutes = (diff.seconds % 3600) // 60
         response = (
-            f"Ваш суточный лимит в {DAILY_LIMIT} символов уже исчерпан.\n"
+            f"Ваш суточный лимит общения с FEELIX исчерпан :(\n"
             f"Сможете продолжить общение через {hours} ч. {minutes} мин.\n\n"
             "Для безлимитного общения оформите Premium подписку или используйте пробную подписку."
         )
@@ -501,6 +505,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     if user_message == "Очистить историю":
         archive_user_history(user_id)
+        database.db_clear_user_history(user_id)
         response = "История сброшена."
         await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
 
