@@ -49,11 +49,11 @@ if not client.has_collection(collection_name=MAIN_COLLECTION):
     logger.info(f"Collection '{MAIN_COLLECTION}' not found. Creating it...")
     client.create_collection(
         collection_name=MAIN_COLLECTION,
-        # schema=schema,
+        schema=schema,
         dimension=EMBEDDING_DIM,
         metric_type="IP",  # Inner product distance
         consistency_level="Strong",
-        auto_id=True
+        # auto_id=True
     )
     logger.info(f"Collection '{MAIN_COLLECTION}' created successfully.")
 else:
@@ -95,19 +95,10 @@ def db_get_similar(user_id, content : str):
             output_fields=["message"],  # Return the text field
             # filter="user == " + str(user_id)  # Пример потенциального фильтра, если понадобится
         )
-
-        # search_res = client.search(
-        #     collection_name="main_collection_1",
-        #     data=[vector],
-        #     anns_field="vector",             # поле в котором хранится эмбеддинг
-        #     limit=3,
-        #     param={"metric_type": "IP"},     # или {"metric_type": "IP", "params": {...}}
-        #     output_fields=["message"],
-        # )
-
         if search_res and search_res[0]:
             msgs = [i["entity"]["message"] for i in search_res[0]]
             logger.info(f"Found {len(msgs)} similar messages for user_id={user_id}")
+            print(msgs)
             return msgs
         else:
             logger.info(f"No search results found for user_id={user_id}")

@@ -21,6 +21,7 @@ from telegram.ext import (
     MessageHandler, filters
 )
 
+from bot.database import db_print_all
 from logging_config import logger
 
 from config import (
@@ -178,17 +179,13 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
     return summarization_happened
 
 
-async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
+async def get_groq_response(text: str) -> str:
     """
     Отправляет сообщение в Groq API и получает ответ.
 
-    :param user_id: ID пользователя.
-    :param prompt_ru: Текст сообщения пользователя.
-    :param update: Объект Update от Telegram (опционально).
-    :param context: Контекст приложения (опционально).
+    :param text: Промпт для LLM.
     :return: Ответ от бота или сообщение об ошибке.
     """
-    summarization_happened = await add_message(user_id, "user", [prompt_ru])
     try:
         current_key, current_account_id, current_gateway_id = next(api_key_cycle)
 
@@ -197,20 +194,13 @@ async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None,
             "Authorization": f"Bearer {current_key}",
             "Content-Type": "application/json"
         }
+        # Переместить begin
 
-        similar_messages = database.db_get_similar(user_id, prompt_ru)
-        history = load_user_history(user_id)
-        
-        for message in similar_messages:
-            history.append({
-                "role": "system",
-                "content": f"Ранее пользователь писал (похоже на текущий запрос): {message}"
-            })
 
-        database.db_handle_messages(user_id, "user", [prompt_ru])
 
+        # Переместить end
         data = {
-            "messages": history,
+            "messages": text,
             # "model": "llama3-8b-8192",
             "model" : "llama-3.3-70b-versatile",
             "temperature": 1,
@@ -227,7 +217,6 @@ async def get_groq_response(user_id: int, prompt_ru: str, update: Update = None,
             result = response.json()
 
         bot_reply = result['choices'][0]['message']['content']
-        await add_message(user_id, "assistant", [bot_reply])
         return bot_reply
     except httpx.HTTPStatusError as http_err:
         logger.error(f"HTTP ошибка при получении ответа от Groq API для пользователя {user_id}: {http_err}")
@@ -555,15 +544,33 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
         return
 
     # Обычное сообщение (не команда из меню)
-    log_message(user_id, "user", user_message)
     await simulate_typing(context, update.effective_chat.id)
+    # Вся подготовка сообщения к запросу и логирование теперь здесь. Можно вынести в функцию
+    log_message(user_id, "user", user_message)
+    database.db_handle_messages(user_id, "user", [user_message])
+    summarization_happened = await add_message(user_id, "user", [user_message])
+    prompt = load_user_history(user_id)
+
+    prompt.append({
+        "role": "system",
+        "content": "Также вот сообщения пользователя, самые близкие по смыслу к текущему сообщению. "
+                   "Проверь, имеют ли они отношение к обсуждаемой теме и если нужно учти их при ответе."
+    })
+    similar_messages = database.db_get_similar(user_id, user_message)
+    for message in similar_messages:
+        prompt.append({
+            "role": "system",
+            "content": f"Ранее пользователь писал: {message}"
+        })
+
     try:
-        response = await get_groq_response(user_id, user_message, update, context)
+        response = await get_groq_response(user_message)
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
         response = "Извините, произошла ошибка. Пожалуйста, попробуйте позже."
 
     log_message(user_id, "assistant", response)
+    await add_message(user_id, "assistant", [response])
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
     return response
 
