@@ -8,6 +8,7 @@ if not os.path.exists(LOG_DIR):
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'bot.log'))
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

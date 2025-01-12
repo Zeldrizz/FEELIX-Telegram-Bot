@@ -31,7 +31,7 @@ print(f"Embedding model name: {embedding_model}")
 print(f"EMBEDDING_DIM: {EMBEDDING_DIM}")
 print(f"MAX_SEQ_LENGTH: {encoder.get_max_seq_length()}")
 
-id_field = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True)
+id_field = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True)
 user_id_field = FieldSchema(name="user_id", dtype=DataType.INT64)
 time_field = FieldSchema(name="time", dtype=DataType.INT64)
 vector_field = FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=EMBEDDING_DIM)
@@ -41,24 +41,47 @@ role_field = FieldSchema(name="role", dtype=DataType.VARCHAR, max_length=256)
 schema = CollectionSchema(fields=[id_field, user_id_field, time_field, vector_field, message_field, role_field],
                           auto_id=True, enable_dynamic_field=False, description="Main collection schema")
 
-logger.info("Initializing MilvusClient with local path: database/main_collection.db")
-client = MilvusClient("database/main_collection.db")
+logger.info(f"Initializing MilvusClient with local path: database/{MAIN_COLLECTION}.db")
+client = MilvusClient(f"database/{MAIN_COLLECTION}.db")
 
-#надо поглядеть на параметры при создании
+index_params = client.prepare_index_params()
+
+index_params.add_index(
+    field_name=vector_field.name,
+    index_type="AUTOINDEX",
+    metric_type="IP"
+)
+
 if not client.has_collection(collection_name=MAIN_COLLECTION):
     logger.info(f"Collection '{MAIN_COLLECTION}' not found. Creating it...")
     client.create_collection(
         collection_name=MAIN_COLLECTION,
         schema=schema,
-        dimension=EMBEDDING_DIM,
         metric_type="IP",  # Inner product distance
         consistency_level="Strong",
+        primary_field_name=id_field.name,
+        vector_field_name=vector_field.name,
+        index_params=index_params
         # auto_id=True
     )
     logger.info(f"Collection '{MAIN_COLLECTION}' created successfully.")
 else:
     print(f"Collection '{MAIN_COLLECTION}' already exists.")
     logger.info(f"Collection '{MAIN_COLLECTION}' already exists.")
+    client.load_collection(MAIN_COLLECTION)
+
+
+
+# index_params = {
+#     "index_type": "FLAT",
+#     "metric_type": "IP",
+#     "params": {}
+# }
+# client.create_index(
+#     collection_name=MAIN_COLLECTION,
+#     field_name="vector",
+#     index_params=index_params
+# )
 
 #хорошо бы сделать async
 def db_handle_messages(user_id, role, content : list):
@@ -90,10 +113,11 @@ def db_get_similar(user_id, content : str):
         search_res = client.search(
             collection_name=MAIN_COLLECTION,
             data=[vector],
-            limit=3,  # Return top 3 results
-            search_params={"metric_type": "IP", "params": {}},  # Inner product distance
-            output_fields=["message"],  # Return the text field
             # filter="user == " + str(user_id)  # Пример потенциального фильтра, если понадобится
+            limit=3,  # Return top 3 results
+            output_fields=[message_field.name],  # Return the text field
+            search_params={"metric_type": "IP"},  # Inner product distance
+            # anns_field=vector_field.name
         )
         if search_res and search_res[0]:
             msgs = [i["entity"]["message"] for i in search_res[0]]
@@ -103,9 +127,11 @@ def db_get_similar(user_id, content : str):
         else:
             logger.info(f"No search results found for user_id={user_id}")
             return []
+
     except Exception as e:
         logger.error(f"Error while searching similar messages for user_id={user_id}: {e}")
         return []
+
 
 def db_print_all():
     logger.info(f"Printing up to 500 entries from the collection '{MAIN_COLLECTION}'")
@@ -123,12 +149,8 @@ def db_print_all():
 
 def db_clear_user_history(user_id: int):
     filter_expression = f"user_id == {user_id}"
-    print(filter_expression)
-    print(type(filter_expression))
     try:
-        client.delete(collection_name=MAIN_COLLECTION, expr=filter_expression)
-        collection_info = client.describe_collection(MAIN_COLLECTION)
-        print(collection_info)
+        client.delete(collection_name=MAIN_COLLECTION, filter=filter_expression)
         logger.info(f"Deleted user data from collection '{MAIN_COLLECTION}' for user_id={user_id}")
     except Exception as e:
         logger.error(f"Error while deleting user data for user_id={user_id}: {e}")

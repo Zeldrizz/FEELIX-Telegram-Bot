@@ -20,8 +20,6 @@ from telegram.ext import (
     CallbackQueryHandler, CommandHandler, ContextTypes,
     MessageHandler, filters
 )
-
-from bot.database import db_print_all
 from logging_config import logger
 
 from config import (
@@ -179,7 +177,7 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
     return summarization_happened
 
 
-async def get_groq_response(text: str) -> str:
+async def get_groq_response(text) -> str:
     """
     Отправляет сообщение в Groq API и получает ответ.
 
@@ -219,10 +217,10 @@ async def get_groq_response(text: str) -> str:
         bot_reply = result['choices'][0]['message']['content']
         return bot_reply
     except httpx.HTTPStatusError as http_err:
-        logger.error(f"HTTP ошибка при получении ответа от Groq API для пользователя {user_id}: {http_err}")
+        logger.error(f"HTTP ошибка при получении ответа от Groq API: {http_err}")
         return "Извините, произошла ошибка при обработке вашего запроса."
     except Exception as e:
-        logger.error(f"Неизвестная ошибка при получении ответа от Groq API для пользователя {user_id}: {e}")
+        logger.error(f"Неизвестная ошибка при получении ответа от Groq API: {e}")
         return "Извините, произошла ошибка при обработке вашего запроса."
 
 def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
@@ -564,7 +562,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
         })
 
     try:
-        response = await get_groq_response(user_message)
+        response = await get_groq_response(prompt)
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
         response = "Извините, произошла ошибка. Пожалуйста, попробуйте позже."
