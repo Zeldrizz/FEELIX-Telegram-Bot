@@ -15,7 +15,9 @@ INACTIVITY_FILE = Path(__file__).resolve().parent.parent / 'save' / 'inactivity.
 
 def load_inactivity_data() -> dict:
     """
-    Загружает {user_id_str: last_interaction_iso_str}.
+    Загружает данные о времени последнего взаимодействия пользователей из файла.
+
+    :return: Словарь вида {user_id_str: last_interaction_iso_str}
     """
     if not INACTIVITY_FILE.exists():
         return {}
@@ -25,7 +27,9 @@ def load_inactivity_data() -> dict:
 
 def save_inactivity_data(data: dict) -> None:
     """
-    Сохраняет {user_id_str: last_interaction_iso_str} в INACTIVITY_FILE.
+    Сохраняет данные о времени последнего взаимодействия пользователей в файл.
+
+    :param data: Словарь вида {user_id_str: last_interaction_iso_str}
     """
     INACTIVITY_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(INACTIVITY_FILE, 'w', encoding='utf-8') as f:
@@ -34,7 +38,9 @@ def save_inactivity_data(data: dict) -> None:
 
 def update_inactivity_timestamp(user_id: int) -> None:
     """
-    Обновляет время последнего взаимодействия пользователя.
+    Обновляет время последнего взаимодействия для указанного пользователя.
+
+    :param user_id: Идентификатор пользователя.
     """
     data = load_inactivity_data()
     data[str(user_id)] = datetime.now().isoformat()
@@ -43,7 +49,11 @@ def update_inactivity_timestamp(user_id: int) -> None:
 
 def get_inactive_users(hours: int = 48) -> list[int]:
     """
-    Возвращает список user_id, которые не писали (и которым бот не писал) >= hours часов.
+    Возвращает список пользователей, которые не взаимодействовали с ботом 
+    в течение указанного количества часов.
+
+    :param hours: Количество часов, начиная с которого пользователь считается неактивным (по умолчанию 48).
+    :return: Список идентификаторов пользователей, которые неактивны.
     """
     data = load_inactivity_data()
     threshold_time = datetime.now() - timedelta(hours=hours)
