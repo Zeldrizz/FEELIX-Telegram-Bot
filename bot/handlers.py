@@ -35,7 +35,7 @@ from utils import (
     set_user_gender, get_user_gender,
     load_daily_limits, save_daily_limits,
     get_free_trial_status, set_free_trial_status,
-    load_daily_usage, save_daily_usage
+    load_daily_usage, save_daily_usage, update_inactivity_timestamp
 )
 
 # import database
@@ -136,8 +136,6 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     total_chars = sum(len(msg["content"]) for msg in history)
     logger.debug(f"Общее количество символов в истории: {total_chars}")
-
-    print(total_chars)
 
     summarization_happened = False
 
@@ -325,6 +323,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_message = update.message.text.strip()
     username = update.effective_user.username or update.effective_user.full_name
 
+    update_inactivity_timestamp(user_id)
+
     gender = get_user_gender(user_id)
     if not gender:
         # Пол не выбран => принуждаем выбирать
@@ -451,6 +451,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # 2) Генерируем ответ бота
     bot_reply = await process_user_message(user_id, user_message, update, context)
+
+    if bot_reply is not None:
+        update_inactivity_timestamp(user_id)
 
     # 3) Прибавляем длину ответа к usage
     if bot_reply is not None:

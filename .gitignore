@@ -34,3 +34,5 @@ __pycache__/
 *.pem
 
 text.txt
+
+*.db
