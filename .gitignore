@@ -35,6 +35,5 @@ __pycache__/
 
 text.txt
 
-*.db
-
 database/
+*.db
