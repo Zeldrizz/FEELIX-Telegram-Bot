@@ -189,12 +189,10 @@ async def get_openroute_response(user_id: int, prompt_ru: str, update: Update = 
     :param prompt_ru: Текст сообщения пользователя.
     :return: Ответ от бота или сообщение об ошибке.
     """
+    summarization_happened = await add_message(user_id, "user", [prompt_ru])
     try:
         # Загрузка истории пользователя
         history = load_user_history(user_id)
-
-        # Добавляем текущее сообщение пользователя в историю
-        history.append({"role": "user", "content": prompt_ru})
 
         # Настройки для OpenRouter API
         url = "https://openrouter.ai/api/v1/chat/completions"
