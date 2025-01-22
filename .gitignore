@@ -15,19 +15,12 @@ save/
 
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
 
 .vscode/
 .idea/
-*.sublime-project
-*.sublime-workspace
 
 *.swp
-*.swo
 *.tmp
-*.bak
-*.orig
 
 *.secret
 *.key
