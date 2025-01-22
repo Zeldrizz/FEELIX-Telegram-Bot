@@ -69,6 +69,20 @@ def get_inactive_users(hours: int = 48) -> list[int]:
     return inactive_users
 
 
+def remove_inactivity_record(user_id: int) -> None:
+    """
+    Удаляет запись о времени последнего взаимодействия для указанного пользователя 
+    из файла inactivity.json (если она там есть).
+
+    :param user_id: Идентификатор пользователя.
+    """
+    data = load_inactivity_data()
+    user_id_str = str(user_id)
+    if user_id_str in data:
+        del data[user_id_str]
+    save_inactivity_data(data)
+
+
 def hash_data(data: Any, algorithm: str = 'sha256') -> str:
     """
     Возвращает хеш строки, полученной из данных, с использованием указанного алгоритма.
