@@ -24,8 +24,9 @@ from logging_config import logger
 
 from config import (
     ADMIN_USER_ID, FEEDBACK_FILE, MAX_CHAR_LIMIT, DAILY_LIMIT_CHARS,
-    SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID, OPENROUTE, PREMIUM_SUBSCRIPTION_PRICE
+    SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID, OPENROUTE, PREMIUM_SUBSCRIPTION_PRICE, NO_API
 )
+
 from utils import (
     archive_user_history, load_user_history,
     log_message, save_user_history, save_user_info,
@@ -178,7 +179,7 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     return summarization_happened
 
-async def get_openroute_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
+async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     """
     Отправляет сообщение в OpenRouter API и получает ответ.
 
@@ -186,6 +187,8 @@ async def get_openroute_response(user_id: int, prompt_ru: str, update: Update = 
     :param prompt_ru: Текст сообщения пользователя.
     :return: Ответ от бота или сообщение об ошибке.
     """
+    if NO_API:
+        return "Без грока"
     summarization_happened = await add_message(user_id, "user", [prompt_ru])
     try:
         # Загрузка истории пользователя
@@ -576,7 +579,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
     await database.db_handle_messages(user_id, "user", [user_message])
 
     try:
-        response = await get_openroute_response(user_id, user_message, update, context)
+        response = await get_api_response(user_id, user_message, update, context)
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
         response = "Извините, произошла ошибка. Пожалуйста, попробуйте позже."
@@ -638,7 +641,7 @@ async def handle_gender_choice_inner(update: Update, context: ContextTypes.DEFAU
     # Ответ пользователю
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
 
-    bot_reply = await get_openroute_response(user_id, "Привет", update, context)
+    bot_reply = await get_api_response(user_id, "Привет", update, context)
     await update.message.reply_text(bot_reply)
 
 async def handle_premium_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

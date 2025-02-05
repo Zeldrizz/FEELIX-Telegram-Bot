@@ -1,4 +1,3 @@
-groq
 python-telegram-bot
 nest_asyncio
 python-dotenv
@@ -11,3 +10,4 @@ mem0ai
 sentence-transformers
 torch
 openai
+python-telegram-bot[job-queue]

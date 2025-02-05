@@ -29,6 +29,8 @@ __pycache__/
 *.pem
 
 text.txt
-
 database/
 *.db
+test_database
+milvus_test.py
+milvus_docs

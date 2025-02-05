@@ -15,7 +15,7 @@ from handlers import (
     handle_text,
     add_premium_user,
     error_handler,
-    get_openroute_response
+    get_api_response
 )
 from utils import (
     get_inactive_users,
@@ -49,7 +49,7 @@ async def job_check_inactive_users(context: CallbackContext):
                     "И закончи свое сообщение добрыми пожеланиями данному пользователю."
                 )
 
-                bot_text = await get_openroute_response(
+                bot_text = await get_api_response(
                     user_id=user_id,
                     prompt_ru=prompt,
                 )

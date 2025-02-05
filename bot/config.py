@@ -17,6 +17,7 @@ FEEDBACK_FILE = os.path.join(Path(__file__).resolve().parent.parent, 'feedbacks'
 PREMIUM_SUBSCRIPTION_PRICE = 99
 
 MAX_CHAR_LIMIT = 30000
+NO_API = os.getenv('NO_API') == '1'
 DAILY_LIMIT_CHARS = 7000
 # 0.75 token = 1 word
 # 8192 tokens * 0.75 = 10000 words

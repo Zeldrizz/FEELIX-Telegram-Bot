@@ -18,6 +18,7 @@ DEVICE = torch.device(f'cuda:{N_GPU-1}' if N_GPU > 0 else 'cpu')
 
 # Download the model from Hugging Face model hub.
 embedding_model = "BAAI/bge-m3"
+
 encoder = SentenceTransformer(embedding_model, device=DEVICE)
 if encoder.get_sentence_embedding_dimension() != EMBEDDING_DIM:
     raise Exception("Database and encoder embedding dimensions do not match")
@@ -28,7 +29,8 @@ print(f"MAX_SEQ_LENGTH: {encoder.get_max_seq_length()}")
 
 # Define Milvus collection fields
 id_field = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True)
-user_id_field = FieldSchema(name="user_id", dtype=DataType.INT64)
+user_id_field = FieldSchema(name="user_id", dtype=DataType.INT64, is_partition_key=True)
+# user_id_field = FieldSchema(name="user_id", dtype=DataType.INT64)
 time_field = FieldSchema(name="time", dtype=DataType.INT64)
 vector_field = FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=EMBEDDING_DIM)
 message_field = FieldSchema(name="message", dtype=DataType.VARCHAR, max_length=65535)
@@ -47,27 +49,27 @@ client = MilvusClient(f"database/{MAIN_COLLECTION}.db")
 index_params = client.prepare_index_params()
 index_params.add_index(
     field_name=vector_field.name,
-    index_type="AUTOINDEX",
-    metric_type="IP"
+    metric_type="IP",
+    index_type="HNSW",
+    index_name="vector_index"
 )
 
 if not client.has_collection(collection_name=MAIN_COLLECTION):
     logger.info(f"Collection '{MAIN_COLLECTION}' not found. Creating it...")
+    print(f"Collection '{MAIN_COLLECTION}' not found. Creating it...")
     client.create_collection(
         collection_name=MAIN_COLLECTION,
         schema=schema,
-        metric_type="IP",  # Inner product distance
         consistency_level="Strong",
-        primary_field_name=id_field.name,
         vector_field_name=vector_field.name,
         index_params=index_params
     )
     logger.info(f"Collection '{MAIN_COLLECTION}' created successfully.")
+    print(f"Collection '{MAIN_COLLECTION}' created successfully.")
 else:
-    print(f"Collection '{MAIN_COLLECTION}' already exists.")
-    logger.info(f"Collection '{MAIN_COLLECTION}' already exists.")
+    print(f"Collection '{MAIN_COLLECTION}' found.")
+    logger.info(f"Collection '{MAIN_COLLECTION}' found.")
     client.load_collection(MAIN_COLLECTION)
-
 
 async def db_handle_messages(user_id: int, role: str, content: list):
     """
@@ -77,11 +79,11 @@ async def db_handle_messages(user_id: int, role: str, content: list):
     vectors = encoder.encode(content, show_progress_bar=False)
     data = [
         {
-            "user_id": user_id,
-            "time": int(time.time()),
-            "vector": vectors[i],
-            "message": content[i],
-            "role": role
+            user_id_field.name: user_id,
+            time_field.name: int(time.time()),
+            vector_field.name: vectors[i],
+            message_field.name: content[i],
+            role_field.name: role
         }
         for i in range(len(vectors))
     ]
@@ -100,12 +102,17 @@ async def db_handle_messages(user_id: int, role: str, content: list):
     if content and content[0] == ".":
         await db_print_all()
 
+    # Для дебага
+    # print(f"Число: {client.has_partition(MAIN_COLLECTION, user_id)}")
+    # print(f"Строка: {client.has_partition(MAIN_COLLECTION, str(user_id))}")
+
 
 async def db_get_similar(user_id: int, content: str):
     """
     Searches the database for messages similar to the given content.
     Returns the top 3 matching messages.
     """
+    await db_print_all()
     logger.info(f"Searching for similar messages to '{content}' for user_id={user_id}")
     vector = encoder.encode(content, show_progress_bar=False)
     try:
@@ -149,7 +156,6 @@ async def db_print_all():
             print(i["message"])
     except Exception as e:
         logger.error(f"Error while querying all entries in '{MAIN_COLLECTION}': {e}")
-
 
 async def db_clear_user_history(user_id: int):
     """
