@@ -23,9 +23,8 @@ from telegram.ext import (
 from logging_config import logger
 
 from config import (
-    ADMIN_USER_ID, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_GATEWAY_ID,
-    FEEDBACK_FILE, GROQ_API_KEYS, MAX_CHAR_LIMIT, DAILY_LIMIT_CHARS,
-    SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID
+    ADMIN_USER_ID, FEEDBACK_FILE, MAX_CHAR_LIMIT, DAILY_LIMIT_CHARS,
+    SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID, OPENROUTE, PREMIUM_SUBSCRIPTION_PRICE
 )
 from utils import (
     archive_user_history, load_user_history,
@@ -34,14 +33,12 @@ from utils import (
     set_user_gender, get_user_gender,
     load_daily_limits, save_daily_limits,
     get_free_trial_status, set_free_trial_status,
-    load_daily_usage, save_daily_usage
+    load_daily_usage, save_daily_usage, update_inactivity_timestamp
 )
 
 import database
 
 nest_asyncio.apply()
-
-api_key_cycle = cycle(zip(GROQ_API_KEYS, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_GATEWAY_ID))
 
 # Состояния пользователя
 user_states: Dict[int, Dict[str, Any]] = {}
@@ -58,53 +55,58 @@ MAIN_MENU_COMMANDS = ["Premium подписка", "Очистить истори
 DAILY_USAGE = load_daily_usage()
 DAILY_LIMIT = DAILY_LIMIT_CHARS  # суточный лимит для бесплатных
 
-async def simulate_typing(context, chat_id):
+async def simulate_typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int, stop_event: asyncio.Event):
     """
     Имитирует процесс набора текста ботом, отображая статус "печатает" в чат.
 
     :param context: Контекст приложения.
     :param chat_id: Идентификатор чата.
     """
-    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(random.randint(1, 3))
+    # await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+    # await asyncio.sleep(random.randint(1, 3))
+    try:
+        while not stop_event.is_set():
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await asyncio.sleep(3)
+    except asyncio.CancelledError:
+        pass
 
 async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) -> str:
     """
-    Суммаризирует историю разговора пользователя, отправляя запрос в Groq API.
+    Суммаризирует историю разговора пользователя, отправляя запрос в OpenRoute API.
 
     :param user_id: ID пользователя.
     :param history: Список сообщений в формате [{"role": "user", "content": "..."}, ...].
     :return: Суммаризированный текст или сообщение об ошибке.
     """
     history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history])
+
     try:
-        current_key, current_account_id, current_gateway_id = next(api_key_cycle)
-        
-        base_url = f"https://gateway.ai.cloudflare.com/v1/{current_account_id}/{current_gateway_id}/groq"
+        # Настройки для OpenRouter API
+        url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {current_key}",
+            "Authorization": f"Bearer {OPENROUTE}",
             "Content-Type": "application/json"
         }
-
-        data = {
+        payload = {
+            "model": "meta-llama/llama-3.3-70b-instruct",
             "messages": [
                 {"role": "user", "content": SUMMARIZATION_PROMPT},
                 {"role": "system", "content": history_text},
                 {"role": "user", "content": 'Пожалуйста, начните пересказ согласно вышеописанным инструкциям.'},
             ],
-            # "model": "llama3-8b-8192",
-            "model" : "llama-3.3-70b-versatile",
             "temperature": 0.5,
-            "top_p": 1.0
+            "top_p": 1.0,
+            # "provider": {
+                # "order": ["NovitaAI", "Hyperbolic"],
+                # "allow_fallbacks": True - does not work. typescript feature
+            # }
         }
 
+        # Отправка запроса
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers=headers,
-                json=data,
-            )
-            response.raise_for_status()
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()  # Проверяем статус ответа
             result = response.json()
 
         summary = result['choices'][0]['message']['content']
@@ -176,51 +178,66 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     return summarization_happened
 
-
-async def get_groq_response(text) -> str:
+async def get_openroute_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     """
-    Отправляет сообщение в Groq API и получает ответ.
+    Отправляет сообщение в OpenRouter API и получает ответ.
 
-    :param text: Промпт для LLM.
+    :param user_id: ID пользователя.
+    :param prompt_ru: Текст сообщения пользователя.
     :return: Ответ от бота или сообщение об ошибке.
     """
+    summarization_happened = await add_message(user_id, "user", [prompt_ru])
     try:
-        current_key, current_account_id, current_gateway_id = next(api_key_cycle)
+        # Загрузка истории пользователя
+        history = load_user_history(user_id)
 
-        base_url = f"https://gateway.ai.cloudflare.com/v1/{current_account_id}/{current_gateway_id}/groq"
+
+        history.append({
+            "role": "system",
+            "content": "Также вот сообщения пользователя, самые близкие по смыслу к текущему сообщению. "
+                    "Проверь, имеют ли они отношение к обсуждаемой теме и если нужно учти их при ответе."
+        })
+        similar_messages = await database.db_get_similar(user_id, prompt_ru)
+        for message in similar_messages:
+            history.append({
+                "role": "system",
+                "content": f"Ранее пользователь писал: {message}"
+            })
+
+        # Настройки для OpenRouter API
+        url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {current_key}",
+            "Authorization": f"Bearer {OPENROUTE}",
             "Content-Type": "application/json"
         }
-        # Переместить begin
 
-
-
-        # Переместить end
-        data = {
-            "messages": text,
-            # "model": "llama3-8b-8192",
-            "model" : "llama-3.3-70b-versatile",
+        payload = {
+            "model": "meta-llama/llama-3.3-70b-instruct",
+            "messages": history,
             "temperature": 1,
-            "top_p": 0.9
+            "top_p": 0.9,
+            # "provider": {
+                # "order": ["NovitaAI", "Hyperbolic"],
+                # "allow_fallbacks": True - does not work. typescript feature
+            # }
         }
 
+        # Отправка запроса
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers=headers,
-                json=data,
-            )
-            response.raise_for_status()
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()  # Проверяем статус ответа
             result = response.json()
 
-        bot_reply = result['choices'][0]['message']['content']
+        # Получение ответа бота
+        bot_reply = result["choices"][0]["message"]["content"]
+
         return bot_reply
-    except httpx.HTTPStatusError as http_err:
-        logger.error(f"HTTP ошибка при получении ответа от Groq API: {http_err}")
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP ошибка при получении ответа от OpenRouter API для пользователя {user_id}: {e}")
         return "Извините, произошла ошибка при обработке вашего запроса."
     except Exception as e:
-        logger.error(f"Неизвестная ошибка при получении ответа от Groq API: {e}")
+        logger.error(f"Неизвестная ошибка при получении ответа от OpenRouter API для пользователя {user_id}: {e}")
         return "Извините, произошла ошибка при обработке вашего запроса."
 
 def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
@@ -315,6 +332,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     user_message = update.message.text.strip()
     username = update.effective_user.username or update.effective_user.full_name
+
+    update_inactivity_timestamp(user_id)
 
     gender = get_user_gender(user_id)
     if not gender:
@@ -443,6 +462,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # 2) Генерируем ответ бота
     bot_reply = await process_user_message(user_id, user_message, update, context)
 
+    if bot_reply is not None:
+        update_inactivity_timestamp(user_id)
+
     # 3) Прибавляем длину ответа к usage
     if bot_reply is not None:
         reply_len = len(bot_reply)
@@ -492,7 +514,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     if user_message == "Очистить историю":
         archive_user_history(user_id)
-        database.db_clear_user_history(user_id)
+        await database.db_clear_user_history(user_id)
         response = "История сброшена."
         await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
 
@@ -541,31 +563,26 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
         await present_free_trial_choice(update, context)
         return
 
-    # Обычное сообщение (не команда из меню)
-    await simulate_typing(context, update.effective_chat.id)
-    # Вся подготовка сообщения к запросу и логирование теперь здесь. Можно вынести в функцию
     log_message(user_id, "user", user_message)
-    database.db_handle_messages(user_id, "user", [user_message])
-    summarization_happened = await add_message(user_id, "user", [user_message])
-    prompt = load_user_history(user_id)
+    chat_id = update.effective_chat.id
 
-    prompt.append({
-        "role": "system",
-        "content": "Также вот сообщения пользователя, самые близкие по смыслу к текущему сообщению. "
-                   "Проверь, имеют ли они отношение к обсуждаемой теме и если нужно учти их при ответе."
-    })
-    similar_messages = database.db_get_similar(user_id, user_message)
-    for message in similar_messages:
-        prompt.append({
-            "role": "system",
-            "content": f"Ранее пользователь писал: {message}"
-        })
+    # 2) Create an asyncio.Event to stop the typing loop when done
+    stop_event = asyncio.Event()
+    # 3) Start the typing loop in the background
+    typing_task = context.application.create_task(
+        simulate_typing(context, chat_id, stop_event)
+    )
+
+    await database.db_handle_messages(user_id, "user", [user_message])
 
     try:
-        response = await get_groq_response(prompt)
+        response = await get_openroute_response(user_id, user_message, update, context)
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
         response = "Извините, произошла ошибка. Пожалуйста, попробуйте позже."
+    finally:
+        stop_event.set()
+        await typing_task
 
     log_message(user_id, "assistant", response)
     await add_message(user_id, "assistant", [response])
@@ -621,7 +638,7 @@ async def handle_gender_choice_inner(update: Update, context: ContextTypes.DEFAU
     # Ответ пользователю
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
 
-    bot_reply = await get_groq_response(user_id, "Привет", update, context)
+    bot_reply = await get_openroute_response(user_id, "Привет", update, context)
     await update.message.reply_text(bot_reply)
 
 async def handle_premium_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -641,7 +658,7 @@ async def handle_premium_subscription(update: Update, context: ContextTypes.DEFA
             save_premium_users(PREMIUM_USERS)
             response = (
                 "Ваша Premium подписка закончилась.\n\n"
-                "✨ Premium подписка длится 1 месяц и стоит 199 рублей.\n"
+                f"✨ Premium подписка длится 1 месяц и стоит {PREMIUM_SUBSCRIPTION_PRICE} рублей.\n"
                 "🚀 Безлимитный доступ к FEELIX!\n\n"
                 "Для оформления свяжитесь с менеджером: @feelix_manager"
             )
@@ -653,7 +670,7 @@ async def handle_premium_subscription(update: Update, context: ContextTypes.DEFA
             )
     else:
         response = (
-            "✨ Premium подписка длится 1 месяц и стоит 199 рублей.\n"
+            f"✨ Premium подписка длится 1 месяц и стоит {PREMIUM_SUBSCRIPTION_PRICE} рублей.\n"
             "🚀 Безлимитный доступ к общению с FEELIX.\n"
             "💬 Нет ограничений в количестве сообщений!\n\n"
             "Для оформления свяжитесь с менеджером: @feelix_manager"

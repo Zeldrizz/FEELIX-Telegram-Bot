@@ -9,14 +9,14 @@ load_dotenv(dotenv_path=env_path)
 TOKEN = os.getenv('TOKEN')
 ADMIN_USER_ID = [int(user_id.strip()) for user_id in os.getenv('ADMIN_USER_ID', '').split(',') if user_id.strip()]
 
-GROQ_API_KEYS = [key.strip() for key in os.getenv('GROQ_API_KEY', '').split(',') if key.strip()]
-CLOUDFLARE_ACCOUNT_ID = [id.strip() for id in os.getenv('CLOUDFLARE_ACCOUNT_ID', '').split(',') if id.strip()]
-CLOUDFLARE_GATEWAY_ID = [id.strip() for id in os.getenv('CLOUDFLARE_GATEWAY_ID', '').split(',') if id.strip()]
+OPENROUTE = os.getenv('OPENROUTE')
 
 LOG_DIR = os.path.join(Path(__file__).resolve().parent.parent, 'logs')  # Логи в корне проекта
 FEEDBACK_FILE = os.path.join(Path(__file__).resolve().parent.parent, 'feedbacks', 'feedbacks.txt')
 
-MAX_CHAR_LIMIT = 50000
+PREMIUM_SUBSCRIPTION_PRICE = 99
+
+MAX_CHAR_LIMIT = 30000
 DAILY_LIMIT_CHARS = 7000
 # 0.75 token = 1 word
 # 8192 tokens * 0.75 = 10000 words

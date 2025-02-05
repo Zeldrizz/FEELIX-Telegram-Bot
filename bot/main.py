@@ -1,14 +1,73 @@
-# bot/main.py
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+import asyncio
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    CallbackContext,
+    JobQueue,
+)
+from telegram.error import Forbidden, BadRequest
 from config import TOKEN
 from handlers import (
     start,
     help_command,
     handle_text,
     add_premium_user,
-    error_handler
+    error_handler,
+    get_openroute_response
+)
+from utils import (
+    get_inactive_users,
+    update_inactivity_timestamp,
+    remove_inactivity_record
 )
 from logging_config import logger
+
+from random import randint
+
+async def job_check_inactive_users(context: CallbackContext):
+    """
+    Периодическая задача для проверки неактивных пользователей и отправки им «пробуждающих» сообщений.
+    """
+    inactive_users = get_inactive_users(hours=randint(48, 120))
+    if not inactive_users:
+        return
+
+    batch_size = 15
+    for i in range(0, len(inactive_users), batch_size):
+        batch = inactive_users[i:i + batch_size]
+        
+        for user_id in batch:
+            try:
+                # Сначала проверяем доступность пользователя:
+                await context.bot.get_chat(user_id)
+                
+                prompt = (
+                    "Пользователь не писал тебе несколько дней, "
+                    "попробуй сам начать разговор от первого лица. "
+                    "И закончи свое сообщение добрыми пожеланиями данному пользователю."
+                )
+
+                bot_text = await get_openroute_response(
+                    user_id=user_id,
+                    prompt_ru=prompt,
+                )
+
+                await context.bot.send_message(chat_id=user_id, text=bot_text)
+                
+                update_inactivity_timestamp(user_id)
+
+            except Forbidden as e:
+                logger.info(f"Пользователь {user_id} заблокировал бота. Пропускаем...")
+                remove_inactivity_record(user_id)
+            except BadRequest as e:
+                logger.info(f"Не удалось связаться с пользователем {user_id}: {e}")
+            except Exception as e:
+                logger.error(f"Не удалось отправить «пробуждающее» сообщение пользователю {user_id}: {e}")
+
+        if i + batch_size < len(inactive_users):
+            await asyncio.sleep(60)
 
 def main():
     if not TOKEN:
@@ -21,11 +80,18 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("add_premium", add_premium_user))
-
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))
 
     # Глобальный обработчик ошибок
     application.add_error_handler(error_handler)
+
+    # Планировщик задач (JobQueue)
+    job_queue = application.job_queue
+    job_queue.run_repeating(
+        callback=job_check_inactive_users,
+        interval=3600,  # Проверяем каждые 60 минут
+        first=30        # Запускаем через 30 секунд после старта бота
+    )
 
     logger.info("Запуск бота...")
     application.run_polling()

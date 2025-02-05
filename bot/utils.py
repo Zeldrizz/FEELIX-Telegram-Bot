@@ -7,7 +7,80 @@ from pathlib import Path
 from typing import Any, List, Dict
 from config import LOG_DIR, SYSTEM_PROMPT
 from logging_config import logger
-from datetime import datetime
+from datetime import datetime, timedelta
+
+
+INACTIVITY_FILE = Path(__file__).resolve().parent.parent / 'save' / 'inactivity.json'
+
+
+def load_inactivity_data() -> dict:
+    """
+    Загружает данные о времени последнего взаимодействия пользователей из файла.
+
+    :return: Словарь вида {user_id_str: last_interaction_iso_str}
+    """
+    if not INACTIVITY_FILE.exists():
+        return {}
+    with open(INACTIVITY_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def save_inactivity_data(data: dict) -> None:
+    """
+    Сохраняет данные о времени последнего взаимодействия пользователей в файл.
+
+    :param data: Словарь вида {user_id_str: last_interaction_iso_str}
+    """
+    INACTIVITY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(INACTIVITY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def update_inactivity_timestamp(user_id: int) -> None:
+    """
+    Обновляет время последнего взаимодействия для указанного пользователя.
+
+    :param user_id: Идентификатор пользователя.
+    """
+    data = load_inactivity_data()
+    data[str(user_id)] = datetime.now().isoformat()
+    save_inactivity_data(data)
+
+
+def get_inactive_users(hours: int = 48) -> list[int]:
+    """
+    Возвращает список пользователей, которые не взаимодействовали с ботом 
+    в течение указанного количества часов.
+
+    :param hours: Количество часов, начиная с которого пользователь считается неактивным (по умолчанию 48).
+    :return: Список идентификаторов пользователей, которые неактивны.
+    """
+    data = load_inactivity_data()
+    threshold_time = datetime.now() - timedelta(hours=hours)
+
+    inactive_users = []
+    for uid_str, iso_time in data.items():
+        try:
+            last_dt = datetime.fromisoformat(iso_time)
+            if last_dt <= threshold_time:
+                inactive_users.append(int(uid_str))
+        except Exception:
+            continue
+    return inactive_users
+
+
+def remove_inactivity_record(user_id: int) -> None:
+    """
+    Удаляет запись о времени последнего взаимодействия для указанного пользователя 
+    из файла inactivity.json (если она там есть).
+
+    :param user_id: Идентификатор пользователя.
+    """
+    data = load_inactivity_data()
+    user_id_str = str(user_id)
+    if user_id_str in data:
+        del data[user_id_str]
+    save_inactivity_data(data)
 
 
 def hash_data(data: Any, algorithm: str = 'sha256') -> str:
