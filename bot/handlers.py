@@ -188,7 +188,7 @@ async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, 
     :return: Ответ от бота или сообщение об ошибке.
     """
     if NO_API:
-        return "Без грока"
+        return "Не используем API ключ сейчас!"
     summarization_happened = await add_message(user_id, "user", [prompt_ru])
     try:
         # Загрузка истории пользователя
