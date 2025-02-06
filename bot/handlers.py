@@ -90,7 +90,7 @@ async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) ->
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "meta-llama/llama-3.3-70b-instruct",
+            "model": "anthropic/claude-3.5-sonnet",
             "messages": [
                 {"role": "user", "content": SUMMARIZATION_PROMPT},
                 {"role": "system", "content": history_text},
@@ -215,7 +215,7 @@ async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, 
         }
 
         payload = {
-            "model": "meta-llama/llama-3.3-70b-instruct",
+            "model": "anthropic/claude-3.5-sonnet",
             "messages": history,
             "temperature": 1,
             "top_p": 0.9,
