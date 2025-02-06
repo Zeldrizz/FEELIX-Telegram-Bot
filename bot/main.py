@@ -33,7 +33,7 @@ async def job_check_inactive_users(context: CallbackContext):
     """
     Периодическая задача для проверки неактивных пользователей и отправки им «пробуждающих» сообщений.
     """
-    inactive_users = get_inactive_users(hours=randint(48, 120))
+    inactive_users = get_inactive_users(hours=randint(120, 168))
     if not inactive_users:
         return
 
