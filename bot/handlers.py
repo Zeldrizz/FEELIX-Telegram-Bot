@@ -24,7 +24,8 @@ from logging_config import logger
 
 from config import (
     ADMIN_USER_ID, FEEDBACK_FILE, MAX_CHAR_LIMIT, DAILY_LIMIT_CHARS,
-    SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID, OPENROUTE, PREMIUM_SUBSCRIPTION_PRICE, NO_API
+    SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID, OPENROUTE, PREMIUM_SUBSCRIPTION_PRICE,
+    NO_API, ANNOUNCEMENT_PASSWORD
 )
 
 from utils import (
@@ -36,6 +37,9 @@ from utils import (
     get_free_trial_status, set_free_trial_status,
     load_daily_usage, save_daily_usage, update_inactivity_timestamp
 )
+
+from telegram.constants import ChatAction
+from telegram.error import Forbidden, BadRequest
 
 import database
 
@@ -179,6 +183,7 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     return summarization_happened
 
+
 async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     """
     Отправляет сообщение в OpenRouter API и получает ответ.
@@ -243,6 +248,7 @@ async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, 
         logger.error(f"Неизвестная ошибка при получении ответа от OpenRouter API для пользователя {user_id}: {e}")
         return "Извините, произошла ошибка при обработке вашего запроса."
 
+
 def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
     """
     Создаёт основное меню с кнопками для пользователя.
@@ -297,6 +303,82 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await ask_user_gender(update, context)
     log_message(user_id, "user", "/start")
     log_message(user_id, "assistant", message)
+
+
+async def update_announcement_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Обновляет объявление и рассылает его активным пользователям.
+
+    Команда: /update_announcement <password>.
+    Доступна только менеджеру (MANAGER_USER_ID).
+
+    Если введён корректный пароль, бот отправляет сообщение 
+    всем пользователям, не заблокировавшим его.
+
+    :param update: Объект обновления от Telegram API.
+    :param context: Контекстный объект, содержащий аргументы команды.
+    :return: None.
+    """
+    from config import MANAGER_USER_ID
+    user_id = update.effective_user.id
+
+    if user_id != MANAGER_USER_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Пожалуйста, укажите пароль: /update_announcement <password>")
+        return
+
+    password = context.args[0]
+    if password != ANNOUNCEMENT_PASSWORD:
+        await update.message.reply_text("Неверный пароль. Доступ запрещён.")
+        return
+
+    from utils import load_inactivity_data, remove_inactivity_record
+
+    inactivity_dict = load_inactivity_data()
+    all_user_ids = list(inactivity_dict.keys())
+    all_user_ids = [int(uid_str) for uid_str in all_user_ids]
+
+    announcement_text = (
+        "🚀 FEELIX обновился!\n\n"
+        "Теперь он лучше понимает вас и ещё естественнее ведёт диалог!\n\n"
+        "⭐️ Попробуйте сами прямо сейчас! ⭐️"
+    )
+
+    await update.message.reply_text(
+        f"Начинаю рассылку объявления {len(all_user_ids)} пользователям.\n"
+        "Это может занять некоторое время..."
+    )
+
+    sent_count = 0
+    blocked_count = 0
+    for idx, uid in enumerate(all_user_ids, start=1):
+        # Делаем небольшую задержку, чтобы не вылететь из лимитов Telegram API
+        await asyncio.sleep(0.1)
+
+        # Пробуем отправить сообщение
+        try:
+            await context.bot.send_chat_action(chat_id=uid, action=ChatAction.TYPING)
+            await asyncio.sleep(0.1)
+            await context.bot.send_message(chat_id=uid, text=announcement_text, parse_mode="Markdown")
+            sent_count += 1
+        except Forbidden:
+            # Бот заблокирован пользователем — удаляем из inactivity.json, чтобы не пытаться снова
+            remove_inactivity_record(uid)
+            blocked_count += 1
+        except BadRequest:
+            # Может быть, пользователь удалил аккаунт или ещё какая-то ошибка
+            pass
+        except Exception as e:
+            # Логируем или пропускаем
+            pass
+
+    await update.message.reply_text(
+        f"Рассылка завершена.\nОтправлено: {sent_count}, заблокировали бота: {blocked_count}."
+    )
+
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """

@@ -16,7 +16,8 @@ from handlers import (
     handle_text,
     add_premium_user,
     error_handler,
-    get_api_response
+    get_api_response,
+    update_announcement_command
 )
 from utils import (
     get_inactive_users,
@@ -83,6 +84,7 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("add_premium", add_premium_user))
+    application.add_handler(CommandHandler("update_announcement", update_announcement_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))
 
     # Глобальный обработчик ошибок
