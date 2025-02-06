@@ -34,3 +34,5 @@ database/
 test_database
 milvus_test.py
 milvus_docs
+
+metrics/

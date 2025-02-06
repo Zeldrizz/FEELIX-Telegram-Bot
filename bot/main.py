@@ -6,6 +6,7 @@ from telegram.ext import (
     filters,
     CallbackContext,
     JobQueue,
+    CallbackQueryHandler
 )
 from telegram.error import Forbidden, BadRequest
 from config import TOKEN
@@ -25,6 +26,8 @@ from utils import (
 from logging_config import logger
 
 from random import randint
+
+from metric import start_metrics, give_metrics, metrics_callback_handler
 
 async def job_check_inactive_users(context: CallbackContext):
     """
@@ -69,7 +72,7 @@ async def job_check_inactive_users(context: CallbackContext):
         if i + batch_size < len(inactive_users):
             await asyncio.sleep(60)
 
-def main():
+async def main():
     if not TOKEN:
         logger.error("Токен бота не установлен. Проверьте файл .env")
         return
@@ -85,6 +88,11 @@ def main():
     # Глобальный обработчик ошибок
     application.add_error_handler(error_handler)
 
+    # Регистрация обработчиков метрик
+    application.add_handler(CommandHandler("start_metrics", start_metrics))
+    application.add_handler(CommandHandler("give_metrics", give_metrics))
+    application.add_handler(CallbackQueryHandler(metrics_callback_handler, pattern=r"^metrics\|"))
+
     # Планировщик задач (JobQueue)
     job_queue = application.job_queue
     job_queue.run_repeating(
@@ -94,8 +102,8 @@ def main():
     )
 
     logger.info("Запуск бота...")
-    application.run_polling()
+    await application.run_polling()
     logger.info("Бот остановлен.")
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
