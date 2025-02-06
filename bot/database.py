@@ -112,7 +112,7 @@ async def db_get_similar(user_id: int, content: str):
     Searches the database for messages similar to the given content.
     Returns the top 3 matching messages.
     """
-    await db_print_all()
+    # await db_print_all()
     logger.info(f"Searching for similar messages to '{content}' for user_id={user_id}")
     vector = encoder.encode(content, show_progress_bar=False)
     try:
