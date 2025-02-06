@@ -46,3 +46,5 @@ SYSTEM_PROMPT = """
 """
 
 MANAGER_USER_ID = int(os.getenv('MANAGER_USER_ID'))
+
+ANNOUNCEMENT_PASSWORD = "cpp_sucks"
