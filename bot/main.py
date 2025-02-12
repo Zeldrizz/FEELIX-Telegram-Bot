@@ -17,7 +17,8 @@ from handlers import (
     add_premium_user,
     error_handler,
     get_api_response,
-    update_announcement_command
+    update_announcement_command,
+    add_message
 )
 from utils import (
     get_inactive_users,
@@ -57,6 +58,8 @@ async def job_check_inactive_users(context: CallbackContext):
                     user_id=user_id,
                     prompt_ru=prompt,
                 )
+
+                await add_message(user_id, "assistant", [bot_text])
 
                 await context.bot.send_message(chat_id=user_id, text=bot_text)
                 
