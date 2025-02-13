@@ -1,9 +1,16 @@
+#bot/metric.py
 import os
 import json
 import asyncio
 from datetime import datetime
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
+from datetime import datetime
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ContextTypes
+from telegram.error import Forbidden, BadRequest
+
+from utils import remove_inactivity_record
 
 BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 METRICS_DIR = os.path.join(BASE_DIR, 'metrics')
@@ -254,7 +261,7 @@ async def start_metrics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     metric_name = context.args[0].lower()
-
+    
     if metric_name == "metric2":
         result = await compute_metric2(context)
         results = load_metrics("metric2")
@@ -273,36 +280,110 @@ async def start_metrics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(summary)
         return
 
-    # Для metric1 (опрос)
-    survey_id = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    current_surveys = load_current_surveys()
-    current_surveys[metric_name] = survey_id
-    save_current_surveys(current_surveys)
+    if metric_name == "metric1":
+        # Для metric1 (опрос)
+        survey_id = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_surveys = load_current_surveys()
+        current_surveys[metric_name] = survey_id
+        save_current_surveys(current_surveys)
 
-    metrics_data = load_metrics(metric_name)
-    metrics_data[survey_id] = {}  # Здесь будут записываться ответы пользователей
-    save_metrics(metric_name, metrics_data)
+        metrics_data = load_metrics(metric_name)
+        metrics_data[survey_id] = {}  # Здесь будут записываться ответы пользователей
+        save_metrics(metric_name, metrics_data)
 
-    await update.message.reply_text(f"Метрика '{metric_name}' запущена (survey_id={survey_id}).")
+        await update.message.reply_text(f"Метрика '{metric_name}' запущена (survey_id={survey_id}).")
 
+        users_file = os.path.join(BASE_DIR, 'save', 'users.json')
+        if os.path.exists(users_file):
+            with open(users_file, 'r', encoding='utf-8') as f:
+                users = json.load(f)
+        else:
+            users = []
+
+        for user_data in users:
+            user_id = user_data.get("user_id")
+            if not user_id:
+                continue
+            cancel_pending_surveys(metric_name, str(user_id))
+            try:
+                text, keyboard = get_question_and_keyboard("q1", metric_name, survey_id)
+                await context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+                await asyncio.sleep(0.1)
+            except Exception:
+                continue
+
+
+async def remind_incomplete_survey(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, date_key: str
+):
+    """
+    Пример: Вызываем этой функцией /remind_incomplete_survey <date_key>
+    date_key – это ключ из metric1.json (напр. "2025-02-13 15:27:45"),
+    чтобы напомнить пройти опрос тем, кто не ответил на q1,q2,q3.
+    """
+    from config import MANAGER_USER_ID
+
+    if update.effective_user.id != MANAGER_USER_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    metric1_data = load_metrics("metric1")
+
+    date_data = metric1_data.get(date_key, {})
+    # date_data — словарь вида { "123456789": { "q1": "...", "q2": "...", "q3": "...", "q4": "..." }, ... }
+
+    # Соберём всех, кто "завершил" (ответил на q1,q2,q3,q4)
+    angels = []
+    for user_str, answers in date_data.items():
+        # answers — типа { "q1": "5", "q2": "5", "q3": "5", ... }
+        # Проверяем, есть ли q1,q2,q3,q4
+        if answers.get("q1") and answers.get("q2") and answers.get("q3") and answers.get("q4"):
+            angels.append(int(user_str))
+    
     users_file = os.path.join(BASE_DIR, 'save', 'users.json')
-    if os.path.exists(users_file):
-        with open(users_file, 'r', encoding='utf-8') as f:
-            users = json.load(f)
-    else:
-        users = []
+    if not os.path.exists(users_file):
+        await update.message.reply_text("Нет файла users.json")
+        return
 
+    with open(users_file, 'r', encoding='utf-8') as f:
+        users = json.load(f)
+    # users – список словарей [{ "user_id": 123, "username": "...", ... }, ...]
+
+    count_sent = 0
     for user_data in users:
         user_id = user_data.get("user_id")
         if not user_id:
             continue
-        cancel_pending_surveys(metric_name, str(user_id))
-        try:
-            text, keyboard = get_question_and_keyboard("q1", metric_name, survey_id)
-            await context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
-            await asyncio.sleep(0.1)
-        except Exception:
+
+        # Если он есть в angels, значит уже ответил q1,q2,q3,q4 => не трогаем
+        if user_id in angels:
             continue
+
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="Пожалуйста, завершите опрос, нам очень важно ваше мнение! 🙏💙"
+            )
+            count_sent += 1
+            await asyncio.sleep(0.1)
+        except Forbidden:
+            remove_inactivity_record(user_id)
+        except BadRequest as e:
+            print(f"BadRequest для user_id={user_id}: {e}")
+        except Exception as e:
+            print(f"Ошибка при отправке напоминания user_id={user_id}: {e}")
+
+    await update.message.reply_text(
+        f"Готово. Напоминание отправлено {count_sent} пользователям"
+    )
+
+
+async def remind_incomplete_survey_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Укажите ключ даты, например: /remind_incomplete_survey 2025-02-13 15:27:45")
+        return
+    date_key = " ".join(context.args)
+    await remind_incomplete_survey(update, context, date_key)
 
 
 async def metrics_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

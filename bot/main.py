@@ -29,7 +29,7 @@ from logging_config import logger
 
 from random import randint
 
-from metric import start_metrics, give_metrics, metrics_callback_handler
+from metric import start_metrics, give_metrics, metrics_callback_handler, remind_incomplete_survey_cmd
 
 async def job_check_inactive_users(context: CallbackContext):
     """
@@ -93,7 +93,7 @@ async def main():
     # Глобальный обработчик ошибок
     application.add_error_handler(error_handler)
 
-    # Регистрация обработчиков метрик
+    application.add_handler(CommandHandler("remind_incomplete_survey", remind_incomplete_survey_cmd))
     application.add_handler(CommandHandler("start_metrics", start_metrics))
     application.add_handler(CommandHandler("give_metrics", give_metrics))
     application.add_handler(CallbackQueryHandler(metrics_callback_handler, pattern=r"^metrics\|"))
