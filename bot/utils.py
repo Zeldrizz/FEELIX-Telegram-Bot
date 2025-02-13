@@ -1,4 +1,5 @@
 # bot/utils.py
+import asyncio
 import hashlib
 import os
 import time
@@ -8,9 +9,92 @@ from typing import Any, List, Dict
 from config import LOG_DIR, SYSTEM_PROMPT
 from logging_config import logger
 from datetime import datetime, timedelta
+import sqlite3
+from database import db_handle_messages
+
+PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
+INACTIVITY_FILE = PROJECT_ROOT_PATH / 'save' / 'inactivity.json'
+
+# База текущих (незавершённых) чанков сообщений от всех юзеров
+conn = sqlite3.connect(PROJECT_ROOT_PATH / 'save' / 'sqlite3_database.db')
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS current_chunks (
+    user_id INT PRIMARY KEY,
+    chunk_json TEXT,
+    updated_at TEXT
+)
+""")
+
+conn.commit()
 
 
-INACTIVITY_FILE = Path(__file__).resolve().parent.parent / 'save' / 'inactivity.json'
+async def update_chunk(user_id: int, message_text: str, role: str):
+    overlap_ratio = 0.2
+    max_chunk_size_in_symbols = 1300
+
+    # Загружаем текущий чанк для пользователя
+    chunk = await get_current_chunk(user_id)
+
+    new_message = {
+        "role": role,
+        "text": message_text,
+        "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M")
+    }
+    chunk.append(new_message)
+
+    # Чанки должны быть небольшие, так что можно каждый раз считать размер
+    chunk_size = 0
+    for message in chunk:
+        chunk_size += len(message["text"])
+
+    # Если длина чанка больше максимальной, завершаем текущий чанк
+    if chunk_size >= max_chunk_size_in_symbols:
+        # Сохраняем текущий чанк
+        await db_handle_messages(user_id, chunk_to_text(chunk), is_chunk=True)
+
+        # Находим место с которого делать overlap
+        tail_len = 1
+        tail_sum_size = len(chunk[-1])
+        while tail_len < len(chunk):
+            tail_sum_size += len(chunk[-tail_len + 1]["text"])
+            if tail_sum_size / chunk_size > overlap_ratio:
+                break
+            tail_len += 1
+
+        chunk = chunk[-tail_len:]
+
+    cursor.execute("""
+        REPLACE INTO current_chunks (user_id, chunk_json, updated_at)
+        VALUES (?, ?, ?)
+    """, (user_id, json.dumps(chunk), datetime.now().strftime("%Y-%m-%dT%H:%M")))
+
+    conn.commit()
+    print(chunk_to_text(chunk))
+
+async def get_current_chunk(user_id: int) -> list:
+    cursor.execute("SELECT chunk_json FROM current_chunks WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    if row:
+        try:
+            chunk = json.loads(row[0])
+        except json.JSONDecodeError:
+            logger.error(f"Can't decode json message chunk for user {user_id}. Clearing chunk.")
+            chunk = []
+    else:
+        chunk = []
+    return chunk
+
+
+def chunk_to_text(chunk, include_timestamps: bool = True):
+    res = ""
+    for message in chunk:
+        if include_timestamps:
+            res += f"{message["timestamp"]} {message["role"]}: {message["text"]}\n"
+        else:
+            res += f"{message["role"]}: {message["text"]}\n"
+    return res
 
 
 def load_inactivity_data() -> dict:
@@ -475,3 +559,4 @@ def save_daily_usage(daily_usage: dict) -> None:
     filepath = save_dir / 'daily_usage.json'
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(daily_usage, f, ensure_ascii=False, indent=2)
+

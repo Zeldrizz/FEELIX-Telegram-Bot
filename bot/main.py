@@ -47,16 +47,17 @@ async def job_check_inactive_users(context: CallbackContext):
             try:
                 # Сначала проверяем доступность пользователя:
                 await context.bot.get_chat(user_id)
-                
-                prompt = (
-                    "Пользователь не писал тебе несколько дней, "
-                    "попробуй сам начать разговор от первого лица. "
-                    "И закончи свое сообщение добрыми пожеланиями данному пользователю."
-                )
+
+                prompt = [{
+                    "role": "system",
+                    "content": "Пользователь не писал тебе несколько дней, "
+                               "попробуй сам начать разговор от первого лица. "
+                               "И закончи свое сообщение добрыми пожеланиями данному пользователю."
+                }]
 
                 bot_text = await get_api_response(
                     user_id=user_id,
-                    prompt_ru=prompt,
+                    prompt=prompt,
                 )
 
                 await add_message(user_id, "assistant", [bot_text])

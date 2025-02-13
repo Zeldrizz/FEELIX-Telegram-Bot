@@ -35,7 +35,8 @@ from utils import (
     set_user_gender, get_user_gender,
     load_daily_limits, save_daily_limits,
     get_free_trial_status, set_free_trial_status,
-    load_daily_usage, save_daily_usage, update_inactivity_timestamp
+    load_daily_usage, save_daily_usage, update_inactivity_timestamp,
+    update_chunk
 )
 
 from telegram.constants import ChatAction
@@ -183,34 +184,15 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     return summarization_happened
 
-
-async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
+async def get_api_response(user_id: int, prompt: [], update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
     """
     Отправляет сообщение в OpenRouter API и получает ответ.
 
     :param user_id: ID пользователя.
-    :param prompt_ru: Текст сообщения пользователя.
+    :param prompt: Текст сообщения пользователя.
     :return: Ответ от бота или сообщение об ошибке.
     """
-    if NO_API:
-        return "Не используем API ключ сейчас!"
-    summarization_happened = await add_message(user_id, "user", [prompt_ru])
     try:
-        # Загрузка истории пользователя
-        history = load_user_history(user_id)
-
-
-        history.append({
-            "role": "system",
-            "content": "Также вот сообщения пользователя, самые близкие по смыслу к текущему сообщению. "
-                    "Проверь, имеют ли они отношение к обсуждаемой теме и если нужно учти их при ответе."
-        })
-        similar_messages = await database.db_get_similar(user_id, prompt_ru)
-        for message in similar_messages:
-            history.append({
-                "role": "system",
-                "content": f"Ранее пользователь писал: {message}"
-            })
 
         # Настройки для OpenRouter API
         url = "https://openrouter.ai/api/v1/chat/completions"
@@ -221,7 +203,7 @@ async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, 
 
         payload = {
             "model": "anthropic/claude-3.5-sonnet",
-            "messages": history,
+            "messages": prompt,
             "temperature": 1,
             "top_p": 0.9,
             # "provider": {
@@ -229,7 +211,8 @@ async def get_api_response(user_id: int, prompt_ru: str, update: Update = None, 
                 # "allow_fallbacks": True - does not work. typescript feature
             # }
         }
-
+        if NO_API:
+            return "NO_API"
         # Отправка запроса
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=payload)
@@ -494,7 +477,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     # Если премиум - никаких ограничений
-    if user_id in PREMIUM_USERS:
+    if user_id in PREMIUM_USERS or user_id in ADMIN_USER_ID:
         # Премиум пользователь общается без ограничений
         await process_user_message(user_id, user_message, update, context)
         return
@@ -648,17 +631,32 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
         await present_free_trial_choice(update, context)
         return
 
-    log_message(user_id, "user", user_message)
-    chat_id = update.effective_chat.id
-
     # 2) Create an asyncio.Event to stop the typing loop when done
     stop_event = asyncio.Event()
     # 3) Start the typing loop in the background
     typing_task = context.application.create_task(
-        simulate_typing(context, chat_id, stop_event)
+        simulate_typing(context, update.effective_chat.id, stop_event)
     )
 
-    await database.db_handle_messages(user_id, "user", [user_message])
+    log_message(user_id, "user", user_message)
+    await update_chunk(user_id, user_message, "user")
+    await add_message(user_id, "user", [user_message])
+    await database.db_handle_messages(user_id, [user_message], role="user")
+
+    # Загрузка истории пользователя
+    prompt = load_user_history(user_id)
+
+    similar_stuff_prompt = ("Также вот части переписки с этим пользователем. "
+                     "Проверь, есть ли в них полезная информация, и если есть, то учти её при ответе.")
+
+    similar_chunks = await database.db_get_similar(user_id, user_message, is_chunk=True)
+    for i in range(len(similar_chunks)):
+        similar_stuff_prompt += f"Часть {i}:\n {similar_chunks[i]}"
+
+    prompt.append({
+        "role": "system",
+        "content": similar_stuff_prompt
+    })
 
     try:
         response = await get_api_response(user_id, user_message, update, context)
@@ -670,6 +668,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
         await typing_task
 
     log_message(user_id, "assistant", response)
+    await update_chunk(user_id, response, "assistant")
     await add_message(user_id, "assistant", [response])
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
     return response
