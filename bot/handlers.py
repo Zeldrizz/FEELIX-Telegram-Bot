@@ -4,11 +4,8 @@ import httpx
 import json
 import nest_asyncio
 import os
-import random
-import textwrap
 import time
 from datetime import datetime, timedelta
-from itertools import cycle
 from typing import Any, Dict, List
 
 from telegram import (
@@ -20,6 +17,7 @@ from telegram.ext import (
     CallbackQueryHandler, CommandHandler, ContextTypes,
     MessageHandler, filters
 )
+
 from logging_config import logger
 
 from config import (
@@ -36,14 +34,15 @@ from utils import (
     load_daily_limits, save_daily_limits,
     get_free_trial_status, set_free_trial_status,
     load_daily_usage, save_daily_usage, update_inactivity_timestamp,
-    update_chunk
 )
 
 from telegram.constants import ChatAction
 from telegram.error import Forbidden, BadRequest
 
-import database
-
+from database import (
+    db_clear_user_history, db_handle_messages,
+    db_get_similar, update_chunk
+)
 nest_asyncio.apply()
 
 # Состояния пользователя
@@ -184,14 +183,17 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     return summarization_happened
 
-async def get_api_response(user_id: int, prompt: [], update: Update = None, context: ContextTypes.DEFAULT_TYPE = None) -> str:
+async def get_api_response(user_id: int, prompt: []) -> str:
     """
     Отправляет сообщение в OpenRouter API и получает ответ.
 
     :param user_id: ID пользователя.
-    :param prompt: Текст сообщения пользователя.
+    :param prompt: Промпт для LLM.
     :return: Ответ от бота или сообщение об ошибке.
     """
+    # debug
+    logg = open("/home/felt/Desktop/Проект/repo/logs/prompts.txt", "a")
+    logg.write(json.dumps(prompt, indent=2, ensure_ascii=False) + "\n\n\n")
     try:
 
         # Настройки для OpenRouter API
@@ -202,7 +204,7 @@ async def get_api_response(user_id: int, prompt: [], update: Update = None, cont
         }
 
         payload = {
-            "model": "anthropic/claude-3.5-sonnet",
+            "model": "meta-llama/llama-3.3-70b-instruct",
             "messages": prompt,
             "temperature": 1,
             "top_p": 0.9,
@@ -225,7 +227,7 @@ async def get_api_response(user_id: int, prompt: [], update: Update = None, cont
         return bot_reply
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP ошибка при получении ответа от OpenRouter API для пользователя {user_id}: {e}")
+        logger.error(f"HTTP ошибка при получении ответа от OpenRouter API для пользователя {user_id}: {e}. Промпт:\n {prompt}")
         return "Извините, произошла ошибка при обработке вашего запроса."
     except Exception as e:
         logger.error(f"Неизвестная ошибка при получении ответа от OpenRouter API для пользователя {user_id}: {e}")
@@ -582,7 +584,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     if user_message == "Очистить историю":
         archive_user_history(user_id)
-        await database.db_clear_user_history(user_id)
+        await db_clear_user_history(user_id)
         response = "История сброшена."
         await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
 
@@ -641,25 +643,29 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
     log_message(user_id, "user", user_message)
     await update_chunk(user_id, user_message, "user")
     await add_message(user_id, "user", [user_message])
-    await database.db_handle_messages(user_id, [user_message], role="user")
+    # На данный момент не отслеживаются отдельные сообщения
+    # await db_handle_messages(user_id, [user_message], role="user")
 
     # Загрузка истории пользователя
     prompt = load_user_history(user_id)
+    # prompt = []
 
     similar_stuff_prompt = ("Также вот части переписки с этим пользователем. "
-                     "Проверь, есть ли в них полезная информация, и если есть, то учти её при ответе.")
+                            "Проверь, есть ли в них полезная информация, и если есть, то учти её при ответе. "
+                            "Отвечай так, будто ты всегда её знал.")
 
-    similar_chunks = await database.db_get_similar(user_id, user_message, is_chunk=True)
-    for i in range(len(similar_chunks)):
-        similar_stuff_prompt += f"Часть {i}:\n {similar_chunks[i]}"
-
+    similar_chunks = await db_get_similar(user_id, user_message, chunk=True)
+    # for i in range(len(similar_chunks)):
+    #     similar_stuff_prompt += f"Часть {i}:\n {similar_chunks[i]}"
+    #
     prompt.append({
         "role": "system",
-        "content": similar_stuff_prompt
+        "content": similar_stuff_prompt,
+        "chat_history": similar_chunks
     })
 
     try:
-        response = await get_api_response(user_id, user_message, update, context)
+        response = await get_api_response(user_id, prompt)
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
         response = "Извините, произошла ошибка. Пожалуйста, попробуйте позже."
@@ -669,8 +675,11 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     log_message(user_id, "assistant", response)
     await update_chunk(user_id, response, "assistant")
-    await add_message(user_id, "assistant", [response])
+
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
+    # print(prompt, end='\n')
+    await add_message(user_id, "assistant", [response])
+
     return response
 
 def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -722,7 +731,7 @@ async def handle_gender_choice_inner(update: Update, context: ContextTypes.DEFAU
     # Ответ пользователю
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
 
-    bot_reply = await get_api_response(user_id, "Привет", update, context)
+    bot_reply = await get_api_response(user_id, "Привет")
     await update.message.reply_text(bot_reply)
 
 async def handle_premium_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
