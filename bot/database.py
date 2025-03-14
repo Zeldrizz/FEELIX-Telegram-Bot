@@ -245,7 +245,7 @@ async def db_clear_user_history(user_id: int):
 async def update_chunk(user_id: int, message_text: str, role: str):
     # TODO: мб сделать так, чтобы последнее сообщение в чанке оставалось на следующий чанк, даже если оно большое
     overlap_ratio = 0.2
-    max_chunk_size_in_symbols = 1000
+    max_chunk_size_in_symbols = 300
 
     # Загружаем текущий чанк для пользователя
     chunk = get_current_chunk(user_id)
@@ -253,7 +253,7 @@ async def update_chunk(user_id: int, message_text: str, role: str):
 
     new_message = {
         "role": role,
-        "text": message_text,
+        "content": message_text,
         "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M")
     }
     chunk.append(new_message)
@@ -261,7 +261,7 @@ async def update_chunk(user_id: int, message_text: str, role: str):
     # Чанки должны быть небольшие, так что можно каждый раз считать размер
     chunk_size = 0
     for message in chunk:
-        chunk_size += len(message["text"])
+        chunk_size += len(message["content"])
 
     # Если длина чанка больше максимальной, завершаем текущий чанк
     if chunk_size >= max_chunk_size_in_symbols:
@@ -273,7 +273,7 @@ async def update_chunk(user_id: int, message_text: str, role: str):
         tail_len = 0
         tail_sum_size = 0
         while tail_len < len(chunk):
-            tail_sum_size += len(chunk[-(tail_len + 1)]["text"])
+            tail_sum_size += len(chunk[-(tail_len + 1)]["content"])
             if tail_sum_size / chunk_size > overlap_ratio:
                 break
             tail_len += 1
@@ -312,14 +312,25 @@ def get_current_chunk(user_id: int) -> list:
     return chunk
 
 async def update_description(user_id: int, chunk: list):
-    return
     prompt = [{
         "role": "system",
-        "content": """Ты анализируешь часть диалога с пользователем, содержащуюся в chat_history, 
-        и извлекаешь из него только важные факты о нём (увлечения, жизненные события, эмоциональные проблемы
-        и т. д.). Например: Любит играть в волейбол. Отец умер от инфаркта. Испытывает тревожность 
-        при общении с людьми. Если в диалоге нет ничего важного, ответь строго: NOTHING IMPORTANT""",
-        "chat_history": chunk
+        "content": "Ты анализируешь часть диалога с пользователем, и извлекаешь из него "
+        "только важные факты о нём (увлечения, жизненные события, эмоциональные проблемы "
+        "и т. д.). Например: \"Любит играть в волейбол. Отец умер от инфаркта. Испытывает тревожность " 
+        "при общении с людьми.\" Выбирай такие факты, которые важны для понимания человека, его жизненной истории, "
+        "его текущей ситуации, чтобы оказывать хорошую эмоциональную поддержку и вести "
+        "содержательный разговор."
+
+    }]
+    prompt += chunk
+    prompt += [{
+        "role": "system",
+        "content": "Далее идёт текущее сохранённое описание пользователя. Если ты извлёк информацию из диалога, "
+        "то дополни описание и верни его. Новое описание должно быть корректным и чётким - если новая информация "
+        "противоречит части старой, то эту старую часть нужно убрать. Дублирующую информацию добавлять не надо. "
+        "В общем объедини старое и новое так, чтобы этот процесс можно было повторить много раз, и сохранённая "
+        "информация становилась полнее и качественней. Если в приведённом диалоге нет важной информации, то ответь " 
+        "строго: NOTHING IMPORTANT. Отвечай чётко по инструкциям, со мной общаться не надо."
     }]
     print(prompt)
     from bot.handlers import get_api_response
@@ -332,8 +343,14 @@ async def update_description(user_id: int, chunk: list):
         INSERT INTO user_descriptions (user_id, description)
         VALUES (?, ?)
         ON CONFLICT (user_id) DO UPDATE SET
-        description = COALESCE(description, '') || '\n' || excluded.description
+        description = excluded.description
     """, (user_id, response))
+    # cursor.execute("""
+    #         INSERT INTO user_descriptions (user_id, description)
+    #         VALUES (?, ?)
+    #         ON CONFLICT (user_id) DO UPDATE SET
+    #         description = COALESCE(description, '') || '\n' || excluded.description
+    #     """, (user_id, response))
     conn.commit()
     #debug
     cursor.execute("SELECT description FROM user_descriptions WHERE user_id = ?", (user_id,))

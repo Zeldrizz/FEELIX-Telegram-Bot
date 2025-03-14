@@ -72,7 +72,7 @@ async def simulate_typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int, stop
     try:
         while not stop_event.is_set():
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-            await asyncio.sleep(3)
+            await asyncio.sleep(0.5)
     except asyncio.CancelledError:
         pass
 
@@ -652,18 +652,21 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     similar_stuff_prompt = ("Также вот части переписки с этим пользователем. "
                             "Проверь, есть ли в них полезная информация, и если есть, то учти её при ответе. "
-                            "Отвечай так, будто ты всегда её знал.")
+                            "Отвечай так, будто ты всегда её знал - не нужно акцинтировать внимание на том, что"
+                            "ты видишь эту историю сейчас.")
 
     similar_chunks = await db_get_similar(user_id, user_message, chunk=True)
-    # for i in range(len(similar_chunks)):
-    #     similar_stuff_prompt += f"Часть {i}:\n {similar_chunks[i]}"
-    #
-    prompt.append({
-        "role": "system",
-        "content": similar_stuff_prompt,
-        "chat_history": similar_chunks
-    })
-
+    if len(similar_chunks) != 0:
+        prompt.append({
+            "role": "system",
+            "content": similar_stuff_prompt,
+        })
+        for i in range(len(similar_chunks)):
+            prompt.append({
+                "role": "system",
+                "content": f"Часть {i + 1}"
+            })
+            prompt += similar_chunks[i]
     try:
         response = await get_api_response(user_id, prompt)
     except Exception as e:
