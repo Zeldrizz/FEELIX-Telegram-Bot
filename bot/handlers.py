@@ -653,7 +653,9 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
     similar_stuff_prompt = ("Также вот части переписки с этим пользователем. "
                             "Проверь, есть ли в них полезная информация, и если есть, то учти её при ответе. "
                             "Отвечай так, будто ты всегда её знал - не нужно акцинтировать внимание на том, что"
-                            "ты видишь эту историю сейчас.")
+                            "ты видишь эту историю сейчас. Обращай внимание на timestamp сообщений, текущее время - "
+                            f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, и приведённые части разговора "
+                            f"скорее всего не относятся напрямую к текущему разговору.")
 
     similar_chunks = await db_get_similar(user_id, user_message, chunk=True)
     if len(similar_chunks) != 0:

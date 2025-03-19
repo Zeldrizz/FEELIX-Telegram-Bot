@@ -182,6 +182,7 @@ async def db_get_similar(user_id: int, content: str, chunk: bool):
             collection_name=collection_name,
             data=[vector],
             limit=3,
+            filter=f'{user_id_field.name} == {user_id}',
             output_fields=[message_field.name],
             search_params={"metric_type": "IP"}
         )
@@ -363,4 +364,5 @@ def clear_description(user_id: int):
         WHERE user_id = ?
     """, (user_id,))
     conn.commit()
+
 
