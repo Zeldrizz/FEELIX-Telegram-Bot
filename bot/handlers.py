@@ -50,7 +50,6 @@ user_states: Dict[int, Dict[str, Any]] = {}
 # Возможные состояния:
 # None или отсутствует в словаре - обычный режим
 # "waiting_for_feedback" - ждем отзыв
-### NEW FEATURE: Добавляем состояния для пробной подписки
 # "choosing_free_trial" - пользователь нажал "Пробная подписка"
 # "confirming_free_trial" - пользователь выбирает "Да, хочу" или "Вернуться обратно"
 
@@ -60,6 +59,7 @@ MAIN_MENU_COMMANDS = ["Premium подписка", "Очистить истори
 DAILY_USAGE = load_daily_usage()
 DAILY_LIMIT = DAILY_LIMIT_CHARS  # суточный лимит для бесплатных
 
+
 async def simulate_typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int, stop_event: asyncio.Event):
     """
     Имитирует процесс набора текста ботом, отображая статус "печатает" в чат.
@@ -67,14 +67,13 @@ async def simulate_typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int, stop
     :param context: Контекст приложения.
     :param chat_id: Идентификатор чата.
     """
-    # await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-    # await asyncio.sleep(random.randint(1, 3))
     try:
         while not stop_event.is_set():
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
             await asyncio.sleep(0.5)
     except asyncio.CancelledError:
         pass
+
 
 async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) -> str:
     """
@@ -87,14 +86,13 @@ async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) ->
     history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in history])
 
     try:
-        # Настройки для OpenRouter API
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {OPENROUTE}",
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "anthropic/claude-3.5-sonnet",
+            "model": "meta-llama/llama-3.3-70b-instruct",
             "messages": [
                 {"role": "user", "content": SUMMARIZATION_PROMPT},
                 {"role": "system", "content": history_text},
@@ -102,10 +100,6 @@ async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) ->
             ],
             "temperature": 0.5,
             "top_p": 1.0,
-            # "provider": {
-                # "order": ["NovitaAI", "Hyperbolic"],
-                # "allow_fallbacks": True - does not work. typescript feature
-            # }
         }
 
         # Отправка запроса
@@ -124,14 +118,15 @@ async def summarize_conversation(user_id: int, history: List[Dict[str, str]]) ->
         logger.error(f"Неизвестная ошибка при суммаризации разговора для пользователя {user_id}: {e}")
         return "Суммаризация не удалась из-за неизвестной ошибки."
 
+
 async def add_message(user_id: int, role: str, content: List[str]) -> bool:
     """
     Добавляет сообщение в историю разговора пользователя.
     Для бесплатных пользователей:
-    - Если общее число символов превысило 10 000, делаем суммаризацию,
+    - Если общее число символов превысило 5 000, делаем суммаризацию,
       сбрасываем историю и даем "бан" на 24 часа.
     Для всех пользователей:
-    - Если общее число символов превысило MAX_CHAR_LIMIT (50 000), делаем суммаризацию.
+    - Если общее число символов превысило MAX_CHAR_LIMIT (5 000), делаем суммаризацию.
     Возвращает True, если была выполнена суммаризация.
     """
     history = load_user_history(user_id)
@@ -145,7 +140,7 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     summarization_happened = False
 
-    # Если пользователь не премиум и превысили 10 000 символов:
+    # Если пользователь не премиум и превысили 700 символов:
     if user_id not in PREMIUM_USERS and total_chars > DAILY_LIMIT_CHARS:
         logger.info(f"Превышен DAILY_LIMIT_CHARS для пользователя {user_id}. Суммаризация и установка дневного лимита...")
         summarized_content = await summarize_conversation(user_id, history)
@@ -183,6 +178,7 @@ async def add_message(user_id: int, role: str, content: List[str]) -> bool:
 
     return summarization_happened
 
+
 async def get_api_response(user_id: int, prompt: []) -> str:
     """
     Отправляет сообщение в OpenRouter API и получает ответ.
@@ -192,11 +188,10 @@ async def get_api_response(user_id: int, prompt: []) -> str:
     :return: Ответ от бота или сообщение об ошибке.
     """
     # debug
-    logg = open("/home/felt/Desktop/Проект/repo/logs/prompts.txt", "a")
-    logg.write(json.dumps(prompt, indent=2, ensure_ascii=False) + "\n\n\n")
+    # logg = open("/home/felt/Desktop/Проект/repo/logs/prompts.txt", "a")
+    # logg.write(json.dumps(prompt, indent=2, ensure_ascii=False) + "\n\n\n")
     try:
 
-        # Настройки для OpenRouter API
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {OPENROUTE}",
@@ -204,17 +199,15 @@ async def get_api_response(user_id: int, prompt: []) -> str:
         }
 
         payload = {
-            "model": "meta-llama/llama-3.3-70b-instruct",
+            "model": "openai/gpt-4o-2024-11-20",
             "messages": prompt,
             "temperature": 1,
             "top_p": 0.9,
-            # "provider": {
-                # "order": ["NovitaAI", "Hyperbolic"],
-                # "allow_fallbacks": True - does not work. typescript feature
-            # }
         }
+
         if NO_API:
             return "NO_API"
+
         # Отправка запроса
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=payload)
@@ -258,6 +251,7 @@ def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
         buttons.append([KeyboardButton("Добавить Premium пользователя")])
 
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -304,7 +298,6 @@ async def update_announcement_command(update: Update, context: ContextTypes.DEFA
     :param context: Контекстный объект, содержащий аргументы команды.
     :return: None.
     """
-    from config import MANAGER_USER_ID
     user_id = update.effective_user.id
 
     if user_id != MANAGER_USER_ID:
@@ -391,6 +384,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     log_message(user_id, "user", "/help")
     log_message(user_id, "assistant", message)
 
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Обрабатывает входящие текстовые сообщения от пользователя.
@@ -414,8 +408,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         
         await ask_user_gender(update, context)
 
-    # 2) Если пользователь уже в состоянии выбора пола, 
-    #    проверяем, не нажал ли он одну из кнопок «Мужской», «Женский» или «Не хочу указывать».
+    # Если пользователь уже в состоянии выбора пола, 
+    # проверяем, не нажал ли он одну из кнопок «Мужской», «Женский» или «Не хочу указывать».
     if user_states.get(user_id, {}).get("choosing_gender", False):
         if user_message in ["Мужской", "Женский", "Не хочу указывать"]:
             await handle_gender_choice_inner(update, context, user_message)
@@ -429,7 +423,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if user_states.get(user_id, {}).get("choosing_free_trial", False):
         # Пользователь выбирает между "Да, хочу!" и "Вернуться обратно"
         if user_message == "Да, хочу!":
-            # Даем премиум на месяц
+            # Даем премиум на 7 дней
             end_date = datetime.now() + timedelta(days=7)
             PREMIUM_USERS[user_id] = end_date
             save_premium_users(PREMIUM_USERS)
@@ -543,10 +537,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             # Если после ответа бота мы превысили суточный лимит —
             # пользователь просто уже не сможет отправить следующее сообщение
             # до reset_time. Сам ответ уже выдан.
-            usage = DAILY_LIMIT  # "забиваем" usage в значение, не выходящее за пределы
+            usage = DAILY_LIMIT  # забиваем usage в значение, не выходящее за пределы
         usage_info["usage"] = usage
         DAILY_USAGE[str(user_id)] = usage_info
         save_daily_usage(DAILY_USAGE)
+
 
 async def process_user_message(user_id: int, user_message: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     """
@@ -633,9 +628,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
         await present_free_trial_choice(update, context)
         return
 
-    # 2) Create an asyncio.Event to stop the typing loop when done
     stop_event = asyncio.Event()
-    # 3) Start the typing loop in the background
     typing_task = context.application.create_task(
         simulate_typing(context, update.effective_chat.id, stop_event)
     )
@@ -643,6 +636,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
     log_message(user_id, "user", user_message)
     await update_chunk(user_id, user_message, "user")
     await add_message(user_id, "user", [user_message])
+
     # На данный момент не отслеживаются отдельные сообщения
     # await db_handle_messages(user_id, [user_message], role="user")
 
@@ -687,6 +681,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     return response
 
+
 def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Глобальный обработчик ошибок. Логирует ошибки при обработке обновлений.
@@ -695,6 +690,7 @@ def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     :param context: Контекст приложения.
     """
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
 
 async def ask_user_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -708,6 +704,7 @@ async def ask_user_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ]
     message = "Укажите ваш пол, чтобы я мог лучше настроиться на общение:"
     await update.message.reply_text(message, reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+
 
 async def handle_gender_choice_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, choice: str) -> None:
     """
@@ -738,6 +735,7 @@ async def handle_gender_choice_inner(update: Update, context: ContextTypes.DEFAU
 
     bot_reply = await get_api_response(user_id, "Привет")
     await update.message.reply_text(bot_reply)
+
 
 async def handle_premium_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -775,6 +773,7 @@ async def handle_premium_subscription(update: Update, context: ContextTypes.DEFA
         )
     await update.message.reply_text(response)
 
+
 async def add_premium_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Обрабатывает команду добавления пользователя в список Premium.
@@ -810,6 +809,7 @@ async def add_premium_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except (IndexError, ValueError):
         response = "Пожалуйста, укажите корректный USER_ID."
         await update.message.reply_text(response)
+
 
 async def present_free_trial_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
