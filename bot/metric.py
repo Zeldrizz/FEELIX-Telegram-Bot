@@ -180,8 +180,7 @@ async def compute_metric2(context: ContextTypes.DEFAULT_TYPE) -> dict:
                  "timestamp": <читаемое время>,
                  "total_symbols": <общее количество символов>,
                  "total_users": <число записей в users.json>,
-                 "not_banned_users": <число пользователей, взятое из inactivity.json>,
-                 "average_length": <средняя длина сообщения>
+                 "cnt_users_not_banned_us": <число пользователей, взятое из inactivity.json, т.е те кто не блокнул нашего бота>,
              }
     """
     EXCLUDED_TEXT = ("Пользователь не писал тебе несколько дней, "
@@ -219,30 +218,27 @@ async def compute_metric2(context: ContextTypes.DEFAULT_TYPE) -> dict:
 
     # Число пользователей, которые не заблокировали бота, берем из файла inactivity.json
     inactivity_file = os.path.join(BASE_DIR, "save", "inactivity.json")
-    not_banned_users = 0
+    cnt_users_not_banned_us = 0
     if os.path.exists(inactivity_file):
         try:
             with open(inactivity_file, 'r', encoding='utf-8') as f:
                 inactivity_data = json.load(f)
-            not_banned_users = len(inactivity_data)
+            cnt_users_not_banned_us = len(inactivity_data)
         except Exception:
             pass
-
-    average_length = total_symbols / total_users if total_users > 0 else 0
 
     result = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "total_symbols": total_symbols,
         "total_users": total_users,
-        "not_banned_users": not_banned_users,
-        "average_length": average_length
+        "cnt_users_not_banned_us": cnt_users_not_banned_us,
     }
     return result
 
 
 async def start_metrics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Обработчик команды /start_metrics для менеджера.
+    Обработчик команды /start_metrics для MANAGER_USER_ID.
 
     Если параметр равен "metric2", производится вычисление метрики по разговорной истории.
     Иначе запускается опрос (метрика1).
@@ -274,8 +270,7 @@ async def start_metrics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             f"timestamp: {result['timestamp']}\n"
             f"total_symbols: {result['total_symbols']}\n"
             f"total_users: {result['total_users']}\n"
-            f"not_banned_users: {result['not_banned_users']}\n"
-            f"average_length: {result['average_length']:.2f}"
+            f"cnt_users_not_banned_us: {result['cnt_users_not_banned_us']}"
         )
         await update.message.reply_text(summary)
         return
@@ -466,7 +461,7 @@ async def metrics_callback_handler(update: Update, context: ContextTypes.DEFAULT
 
 async def give_metrics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Обработчик команды /give_metrics для менеджера.
+    Обработчик команды /give_metrics для MANAGER_USER_ID.
 
     Команда должна вызываться в формате:
       /give_metrics <metric_name>
