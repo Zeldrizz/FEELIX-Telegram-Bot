@@ -45,7 +45,6 @@ async def job_check_inactive_users(context: CallbackContext):
         
         for user_id in batch:
             try:
-                # Сначала проверяем доступность пользователя:
                 await context.bot.get_chat(user_id)
 
                 prompt = [{

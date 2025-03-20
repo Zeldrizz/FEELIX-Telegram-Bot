@@ -36,3 +36,6 @@ milvus_test.py
 milvus_docs
 
 metrics/
+
+prompts_history.txt
+replace_sys_prompt.py

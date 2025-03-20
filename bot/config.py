@@ -11,7 +11,7 @@ ADMIN_USER_ID = [int(user_id.strip()) for user_id in os.getenv('ADMIN_USER_ID', 
 
 OPENROUTE = os.getenv('OPENROUTE')
 
-LOG_DIR = os.path.join(Path(__file__).resolve().parent.parent, 'logs')  # Логи в корне проекта
+LOG_DIR = os.path.join(Path(__file__).resolve().parent.parent, 'logs')
 FEEDBACK_FILE = os.path.join(Path(__file__).resolve().parent.parent, 'feedbacks', 'feedbacks.txt')
 
 PREMIUM_SUBSCRIPTION_PRICE = 99

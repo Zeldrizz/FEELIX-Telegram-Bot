@@ -9,8 +9,10 @@ from config import LOG_DIR, SYSTEM_PROMPT
 from logging_config import logger
 from datetime import datetime, timedelta
 
+
 PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 INACTIVITY_FILE = PROJECT_ROOT_PATH / 'save' / 'inactivity.json'
+
 
 def load_inactivity_data() -> dict:
     """
@@ -223,8 +225,6 @@ def save_user_info(user_id: int, username: str) -> None:
     :param user_id: Идентификатор пользователя.
     :param username: Имя пользователя.
     """
-    from config import TOKEN  # чтобы не было цикличного импорта
-
     save_dir = Path(__file__).resolve().parent.parent / 'save'
     if not save_dir.exists():
         save_dir.mkdir()
@@ -327,7 +327,6 @@ def load_premium_users() -> Dict[int, datetime]:
 
     :return: Словарь с идентификаторами пользователей и датами окончания премиума.
     """
-    from datetime import datetime
     save_dir = Path(__file__).resolve().parent.parent / 'save'
     filepath = save_dir / 'premium_users.json'
     if not filepath.exists():
@@ -385,6 +384,7 @@ def save_daily_limits(daily_limits: Dict[int, datetime]) -> None:
     data = {str(uid): dt.isoformat() for uid, dt in daily_limits.items()}
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
 
 def get_free_trial_status(user_id: int) -> bool:
     """
@@ -445,6 +445,7 @@ def set_free_trial_status(user_id: int, status: bool) -> None:
     with open(users_file, 'w', encoding='utf-8') as f:
         json.dump(users_data, f, ensure_ascii=False, indent=2)
 
+
 def load_daily_usage() -> dict:
     """
     Загружает информацию о суточном использовании символов (как пользователем, так и ботом).
@@ -464,6 +465,7 @@ def load_daily_usage() -> dict:
     with open(filepath, 'r', encoding='utf-8') as f:
         return json.load(f)
 
+
 def save_daily_usage(daily_usage: dict) -> None:
     """
     Сохраняет структуру с расходом символов и временем сброса.
@@ -474,4 +476,3 @@ def save_daily_usage(daily_usage: dict) -> None:
     filepath = save_dir / 'daily_usage.json'
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(daily_usage, f, ensure_ascii=False, indent=2)
-

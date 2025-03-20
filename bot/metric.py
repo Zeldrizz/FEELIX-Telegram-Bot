@@ -9,13 +9,14 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from telegram.error import Forbidden, BadRequest
-
 from utils import remove_inactivity_record
+
 
 BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 METRICS_DIR = os.path.join(BASE_DIR, 'metrics')
 if not os.path.exists(METRICS_DIR):
     os.makedirs(METRICS_DIR)
+
 
 # Файл для хранения текущих опросов для метрики1: словарь { metric_name: survey_id }
 CURRENT_SURVEYS_FILE = os.path.join(METRICS_DIR, "current_surveys.json")
