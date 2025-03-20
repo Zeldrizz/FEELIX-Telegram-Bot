@@ -18,7 +18,7 @@ PREMIUM_SUBSCRIPTION_PRICE = 99
 
 MAX_CHAR_LIMIT = 5000
 NO_API = os.getenv('NO_API') == '1'
-DAILY_LIMIT_CHARS = 7000
+DAILY_LIMIT_CHARS = 700
 # 0.75 token = 1 word
 # 8192 tokens * 0.75 = 10000 words
 # 10000 * 5 = 50000 symbols
