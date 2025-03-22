@@ -23,8 +23,10 @@ from logging_config import logger
 from config import (
     ADMIN_USER_ID, FEEDBACK_FILE, MAX_CHAR_LIMIT, DAILY_LIMIT_CHARS,
     SUMMARIZATION_PROMPT, SYSTEM_PROMPT, MANAGER_USER_ID, OPENROUTE, PREMIUM_SUBSCRIPTION_PRICE,
-    NO_API, ANNOUNCEMENT_PASSWORD
+    NO_API, ANNOUNCEMENT_PASSWORD, USE_LOCAL_MODEL
 )
+
+from local_model import get_local_model_response 
 
 from utils import (
     archive_user_history, load_user_history,
@@ -190,6 +192,13 @@ async def get_api_response(user_id: int, prompt: []) -> str:
     # debug
     # logg = open("/home/felt/Desktop/Проект/repo/logs/prompts.txt", "a")
     # logg.write(json.dumps(prompt, indent=2, ensure_ascii=False) + "\n\n\n")
+
+    if USE_LOCAL_MODEL:
+        try:
+            return await get_local_model_response(user_id, prompt)
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка при получении ответа от локальной LLM для пользователя {user_id}: {e}. Получим ответ через API запрос.")
+
     try:
 
         url = "https://openrouter.ai/api/v1/chat/completions"

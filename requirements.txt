@@ -11,3 +11,5 @@ sentence-transformers
 torch
 openai
 python-telegram-bot[job-queue]
+peft
+transformers

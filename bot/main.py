@@ -9,7 +9,7 @@ from telegram.ext import (
     CallbackQueryHandler
 )
 from telegram.error import Forbidden, BadRequest
-from config import TOKEN
+from config import TOKEN, USE_LOCAL_MODEL
 from handlers import (
     start,
     help_command,
@@ -26,6 +26,8 @@ from utils import (
     remove_inactivity_record
 )
 from logging_config import logger
+
+from local_model import init_local_model
 
 from random import randint
 
@@ -80,6 +82,10 @@ async def main():
     if not TOKEN:
         logger.error("Токен бота не установлен. Проверьте файл .env")
         return
+    
+    if USE_LOCAL_MODEL:
+        print("[USE_LOCAL_MODEL=1] Инициализируем локальную модель...")
+        await init_local_model()
 
     application = ApplicationBuilder().token(TOKEN).build()
 

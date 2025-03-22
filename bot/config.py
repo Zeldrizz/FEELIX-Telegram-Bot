@@ -11,6 +11,10 @@ ADMIN_USER_ID = [int(user_id.strip()) for user_id in os.getenv('ADMIN_USER_ID', 
 
 OPENROUTE = os.getenv('OPENROUTE')
 
+USE_LOCAL_MODEL = os.getenv("USE_LOCAL_MODEL") == "1"
+# USE_LOCAL_MODEL=0 в .env - значит делаем API запросы
+# USE_LOCAL_MODEL=1 в .env - значит делаем запросы к локальной LLM
+
 LOG_DIR = os.path.join(Path(__file__).resolve().parent.parent, 'logs')
 FEEDBACK_FILE = os.path.join(Path(__file__).resolve().parent.parent, 'feedbacks', 'feedbacks.txt')
 
