@@ -120,7 +120,7 @@ conn.commit()
 
 
 
-async def db_handle_messages(user_id: int, content: list, is_chunk: bool = False, role: str = "user"):
+async def db_handle_messages(user_id: int, content: list, is_chunk: bool = True, role: str = "user") -> None:
     """
     Inserts messages or chunks into the database. If the content starts with a ".", print all entries.
     """
@@ -167,7 +167,7 @@ async def db_handle_messages(user_id: int, content: list, is_chunk: bool = False
     # print(f"Строка: {client.has_partition(MAIN_COLLECTION, str(user_id))}")
 
 
-async def db_get_similar(user_id: int, content: str, chunk: bool):
+async def db_get_similar(user_id: int, content: str, chunk: bool = True) -> list:
     """
     Searches the database for messages or chunks similar to the given content.
     Returns the top 3 results.
@@ -199,58 +199,57 @@ async def db_get_similar(user_id: int, content: str, chunk: bool):
         return []
 
 
-async def db_print_all():
+async def db_print_all() -> None:
     """
     Prints up to 500 entries from the collection.
     """
-    logger.info(f"Printing up to 500 entries from the collection '{MAIN_COLLECTION}'")
+    logger.info(f"Printing up to 500 entries from the collection '{CHUNK_COLLECTION}'")
     try:
         # Wrap the blocking query call in asyncio.to_thread
         res = await asyncio.to_thread(
             client.query,
-            collection_name=MAIN_COLLECTION,
-            output_fields=[message_field.name],
+            collection_name=CHUNK_COLLECTION,
+            output_fields=[message_field.name, user_id_field.name],
             limit=500
         )
         print("Full database printed:")
         for i in res:
-            print(i["message"])
+            print(f"user_id: {i[user_id_field.name]}, chunk: {i[message_field.name]}")
     except Exception as e:
-        logger.error(f"Error while querying all entries in '{MAIN_COLLECTION}': {e}")
+        logger.error(f"Error while querying all entries in '{CHUNK_COLLECTION}': {e}")
 
-async def db_clear_user_history(user_id: int):
+async def db_clear_user_history(user_id: int) -> None:
     """
     Clears the message history for a given user.
     """
     filter_expression = f"user_id == {user_id}"
     try:
-        # Wrap the blocking delete call in asyncio.to_thread
-        await asyncio.to_thread(
-            client.delete,
+        client.delete(
             collection_name=MAIN_COLLECTION,
             filter=filter_expression
         )
         logger.info(f"Deleted user data from collection '{MAIN_COLLECTION}' for user_id={user_id}")
-        await asyncio.to_thread(
-            client.delete,
+        client.delete(
             collection_name=CHUNK_COLLECTION,
             filter=filter_expression
         )
         logger.info(f"Deleted user data from collection '{CHUNK_COLLECTION}' for user_id={user_id}")
         clear_current_chunk(user_id)
-        clear_description(user_id)
+        clear_user_description(user_id)
     except Exception as e:
         logger.error(f"Error while deleting user data for user_id={user_id}: {e}")
 
 
-async def update_chunk(user_id: int, message_text: str, role: str):
-    # TODO: мб сделать так, чтобы последнее сообщение в чанке оставалось на следующий чанк, даже если оно большое
+async def update_chunk(user_id: int, message_text: str, role: str) -> None:
     overlap_ratio = 0.2
-    max_chunk_size_in_symbols = 300
+    max_chunk_size_in_symbols = 800
 
     # Загружаем текущий чанк для пользователя
     chunk = get_current_chunk(user_id)
+
+    #debug
     print(chunk)
+
 
     new_message = {
         "role": role,
@@ -268,7 +267,7 @@ async def update_chunk(user_id: int, message_text: str, role: str):
     if chunk_size >= max_chunk_size_in_symbols:
         # Сохраняем текущий чанк
         await db_handle_messages(user_id, [json.dumps(chunk, ensure_ascii=False)], is_chunk=True)
-        await update_description(user_id, chunk)
+        await update_user_description(user_id, chunk)
 
         # Находим место с которого делать overlap
         tail_len = 0
@@ -291,7 +290,7 @@ async def update_chunk(user_id: int, message_text: str, role: str):
     """, (user_id, json.dumps(chunk), datetime.now().strftime("%Y-%m-%dT%H:%M")))
     conn.commit()
 
-def clear_current_chunk(user_id: int):
+def clear_current_chunk(user_id: int) -> None:
     cursor.execute("""
     UPDATE current_chunks
     SET chunk_json = NULL, updated_at = ?
@@ -312,18 +311,28 @@ def get_current_chunk(user_id: int) -> list:
             logger.error(f"Error while decoding chunk for user {user_id}: {e}. Returning empty chunk.")
     return chunk
 
-async def update_description(user_id: int, chunk: list):
+def get_user_description(user_id: int) -> str:
+    cursor.execute("SELECT description FROM user_descriptions WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    if result and result[0]:
+        return result[0]
+    else:
+        return "Нет описания."
+
+async def update_user_description(user_id: int, chunk: list) -> None:
     prompt = [{
         "role": "system",
         "content": "Ты анализируешь часть диалога с пользователем, и извлекаешь из него "
         "только важные факты о нём (увлечения, жизненные события, эмоциональные проблемы "
-        "и т. д.). Например: \"Любит играть в волейбол. Отец умер от инфаркта. Испытывает тревожность " 
-        "при общении с людьми.\" Выбирай такие факты, которые важны для понимания человека, его жизненной истории, "
+        "и т. д.). Например: \"20 лет. Мужской пол. Родился в Рязани, живёт в Москве."
+        "Любит играть в волейбол. Отец умер от инфаркта. Испытывает тревожность при общении с людьми.\""
+        "Выбирай такие факты, которые важны для понимания человека, его жизненной истории, "
         "его текущей ситуации, чтобы оказывать хорошую эмоциональную поддержку и вести "
         "содержательный разговор."
 
     }]
     prompt += chunk
+    description = get_user_description(user_id)
     prompt += [{
         "role": "system",
         "content": "Далее идёт текущее сохранённое описание пользователя. Если ты извлёк информацию из диалога, "
@@ -331,33 +340,24 @@ async def update_description(user_id: int, chunk: list):
         "противоречит части старой, то эту старую часть нужно убрать. Дублирующую информацию добавлять не надо. "
         "В общем объедини старое и новое так, чтобы этот процесс можно было повторить много раз, и сохранённая "
         "информация становилась полнее и качественней. Если в приведённом диалоге нет важной информации, то ответь " 
-        "строго: NOTHING IMPORTANT. Отвечай чётко по инструкциям, со мной общаться не надо."
+        "строго: NOTHING IMPORTANT. Отвечай чётко по инструкциям, со мной общаться не надо. "
+        f"Описание: {description} "
     }]
-    print(prompt)
+    print(f"Промпт обновления описания: {prompt}")
     from bot.handlers import get_api_response
     response = await get_api_response(user_id, prompt)
-    # print(response)
+    print(f"Ответ на промпт обновления описания: {response}")
     if response == "NOTHING IMPORTANT":
         return
-
     cursor.execute("""
         INSERT INTO user_descriptions (user_id, description)
         VALUES (?, ?)
         ON CONFLICT (user_id) DO UPDATE SET
         description = excluded.description
     """, (user_id, response))
-    # cursor.execute("""
-    #         INSERT INTO user_descriptions (user_id, description)
-    #         VALUES (?, ?)
-    #         ON CONFLICT (user_id) DO UPDATE SET
-    #         description = COALESCE(description, '') || '\n' || excluded.description
-    #     """, (user_id, response))
     conn.commit()
-    #debug
-    cursor.execute("SELECT description FROM user_descriptions WHERE user_id = ?", (user_id,))
-    print(cursor.fetchone()[0])  # Выведет обновлённый description
 
-def clear_description(user_id: int):
+def clear_user_description(user_id: int):
     cursor.execute("""
         UPDATE user_descriptions
         SET description = ''

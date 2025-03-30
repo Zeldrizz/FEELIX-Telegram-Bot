@@ -42,8 +42,8 @@ from telegram.constants import ChatAction
 from telegram.error import Forbidden, BadRequest
 
 from database import (
-    db_clear_user_history, db_handle_messages,
-    db_get_similar, update_chunk
+    db_clear_user_history, db_get_similar,
+    update_chunk, get_user_description
 )
 nest_asyncio.apply()
 
@@ -651,7 +651,6 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
 
     # Загрузка истории пользователя
     prompt = load_user_history(user_id)
-    # prompt = []
 
     similar_stuff_prompt = ("Также вот части переписки с этим пользователем. "
                             "Проверь, есть ли в них полезная информация, и если есть, то учти её при ответе. "
@@ -661,6 +660,7 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
                             f"скорее всего не относятся напрямую к текущему разговору.")
 
     similar_chunks = await db_get_similar(user_id, user_message, chunk=True)
+    # Добавление отрывков разговора из прошолого, которые могу содержать полезную информацию
     if len(similar_chunks) != 0:
         prompt.append({
             "role": "system",
@@ -672,6 +672,16 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
                 "content": f"Часть {i + 1}"
             })
             prompt += similar_chunks[i]
+
+    # Добавление описания пользователя.
+    description = get_user_description(user_id)
+    description_prompt = ("Далее идёт краткое описание пользователя, сформированное из всех разговоров с ним. "
+                          f"Учти это при ответе. Описание: {description}")
+    prompt.append({
+        "role": "system",
+        "content": description_prompt,
+    })
+
     try:
         response = await get_api_response(user_id, prompt)
     except Exception as e:
@@ -685,7 +695,6 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
     await update_chunk(user_id, response, "assistant")
 
     await update.message.reply_text(response, reply_markup=get_main_menu(user_id))
-    # print(prompt, end='\n')
     await add_message(user_id, "assistant", [response])
 
     return response
