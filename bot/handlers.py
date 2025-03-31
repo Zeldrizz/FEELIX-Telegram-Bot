@@ -677,10 +677,14 @@ async def process_user_message(user_id: int, user_message: str, update: Update, 
     description = get_user_description(user_id)
     description_prompt = ("Далее идёт краткое описание пользователя, сформированное из всех разговоров с ним. "
                           f"Учти это при ответе. Описание: {description}")
-    prompt.append({
-        "role": "system",
-        "content": description_prompt,
-    })
+    if description != "Нет описания.":
+        prompt.append({
+            "role": "system",
+            "content": description_prompt,
+        })
+
+    #debug
+    logger.info(prompt)
 
     try:
         response = await get_api_response(user_id, prompt)
